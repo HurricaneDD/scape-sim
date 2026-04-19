@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <title>风光摄影模拟（电脑版）</title>
+    <!-- 引入 Cesium 官方样式（必须） -->
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        /* 主变焦控制操作 */
+        #controls {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            min-width: 250px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        /* 变焦滑块容器 */
+        .slider-container {
+            position: relative;
+            margin: 10px 0;
+        }
+        
+        #zoomSlider {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        /* 滑块轨道 */
+        #zoomSlider::-webkit-slider-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 10%, 
+                #0078d4 10%, 
+                #0078d4 20%, 
+                #e0e0e0 20%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 80%, 
+                #0078d4 80%, 
+                #0078d4 90%, 
+                #e0e0e0 90%, 
+                #e0e0e0 100%);
+        }
+        
+        #zoomSlider::-moz-range-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 10%, 
+                #0078d4 10%, 
+                #0078d4 20%, 
+                #e0e0e0 20%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 80%, 
+                #0078d4 80%, 
+                #0078d4 90%, 
+                #e0e0e0 90%, 
+                #e0e0e0 100%);
+        }
+        
+        /* 滑块按钮 */
+        #zoomSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        #zoomSlider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        /* 滑块刻度标记 */
+        .slider-mark {
+            position: absolute;
+            top: -7px;
+            width: 3px;
+            height: 16px;
+            background: #0078d4;
+            transform: translateX(-50%);
+        }
+        
+        .slider-mark-label {
+            position: absolute;
+            top: 20px;
+            font-size: 10px;
+            color: #0078d4;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            font-weight: 500;
+        }
+        
+        #zoomValue {
+            display: inline-block;
+            margin-left: 10px;
+            font-weight: bold;
+            color: #0078d4;
+        }
+        
+        .button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        .button:hover {
+            background: #005a9e;
+        }
+        
+        .button:disabled {
+            background: #ccc;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        /* 开关样式 */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        
+        .switch-label {
+            margin-right: 10px;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #f44336;
+            transition: .4s;
+            border-radius: 20px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+        
+        /* 遥感样式 */
+        .joystick {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #0078d4;
+            z-index: 1000;
+            touch-action: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        .joystick-inner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #0078d4;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        #rightJoystick {
+            bottom: 60px;
+            right: 125px;
+        }
+        
+        /* 方向键样式 */
+        #directionPad {
+            position: absolute;
+            bottom: 60px;
+            left: 200px;
+            width: 150px;
+            height: 100px;
+            z-index: 1000;
+        }
+        
+        .direction-btn {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #0078d4;
+            color: #0078d4;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .direction-btn:hover {
+            background: rgba(240, 240, 240, 0.95);
+        }
+        
+        #btnUp {
+            top: 0;
+            left: 50px;
+        }
+        
+        #btnLeft {
+            top: 50px;
+            left: 0;
+        }
+        
+        #btnDown {
+            top: 50px;
+            left: 50px;
+        }
+        
+        #btnRight {
+            top: 50px;
+            left: 100px;
+        }
+        
+        /* 高度滑块容器 */
+        #heightSliderContainer {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 210px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+        }
+        
+        #heightSlider {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        /* 高度滑块轨道 */
+        #heightSlider::-webkit-slider-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 5%, 
+                #0078d4 5%, 
+                #0078d4 10%, 
+                #e0e0e0 10%, 
+                #e0e0e0 20%, 
+                #0078d4 20%, 
+                #0078d4 25%, 
+                #e0e0e0 25%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 100%);
+        }
+        
+        #heightSlider::-moz-range-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 5%, 
+                #0078d4 5%, 
+                #0078d4 10%, 
+                #e0e0e0 10%, 
+                #e0e0e0 20%, 
+                #0078d4 20%, 
+                #0078d4 25%, 
+                #e0e0e0 25%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 100%);
+        }
+        
+        /* 高度滑块按钮 */
+        #heightSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        #heightSlider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        #heightValue {
+            color: #0078d4;
+            font-weight: bold;
+        }
+        
+        /* 镜头回正按钮 */
+        #resetCameraBtn {
+            position: absolute;
+            bottom: 80px;
+            right: 285px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #0078d4;
+            color: #0078d4;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        #resetCameraBtn:hover {
+            background: rgba(240, 240, 240, 0.95);
+        }
+        
+        /* 时间控制 - 移动到屏幕正上方 */
+        #timeControls {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 7px 15px;
+            border-radius: 8px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            text-align: center;
+            min-width: 300px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+        }
+        
+        #timeDisplay {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        #currentTime {
+            font-weight: bold;
+            color: #0078d4;
+        }
+        
+        #customTimeInput {
+            width: 200px;
+            padding: 5px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            background: white;
+            color: #333;
+            border-radius: 4px;
+        }
+        
+        /* 相机信息显示 - 模仿手机版紧凑样式 */
+        #cameraInfo {
+            position: absolute;
+            top: 80px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 5px 8px;
+            border-radius: 4px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            max-width: 120px;
+            width: 120px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+            font-size: 9px;
+        }
+        
+        #cameraInfo h3 {
+            display: none;
+        }
+        
+        .info-item {
+            margin-bottom: 0;
+            font-size: 10px;
+            line-height: 1.3;
+        }
+        
+        .info-label {
+            color: #0078d4;
+            display: inline-block;
+            width: 50px;
+            font-weight: 500;
+            font-size: 10px;
+        }
+        
+        .info-value {
+            font-weight: bold;
+            color: #333;
+            font-size: 10px;
+        }
+        
+        .info-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        /* 地图选点提示框 - 移动到屏幕左上角 */
+        #mapSelectionOverlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 20px;
+            border-radius: 15px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 2000;
+            text-align: center;
+            min-width: 300px;
+            max-width: 350px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            border: 3px solid #0078d4;
+        }
+        
+        #mapSelectionOverlay h2 {
+            color: #0078d4;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        #mapSelectionOverlay p {
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
+        }
+        
+        #selectedLocationInfo {
+            background: rgba(240, 240, 240, 0.7);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        
+        .location-info-item {
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        
+        .location-label {
+            color: #0078d4;
+            display: inline-block;
+            width: 70px;
+            font-weight: 500;
+        }
+        
+        .location-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        #confirmSelectionBtn {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: background-color 0.2s;
+        }
+        
+        #confirmSelectionBtn:hover {
+            background: #005a9e;
+        }
+        
+        #confirmSelectionBtn:disabled {
+            background: #ccc;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        /* 选择点标记 */
+        .selection-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(255, 0, 0, 0.8);
+            border: 3px solid white;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1500;
+        }
+        
+        /* 确保Cesium官方时间线可见 */
+        .cesium-timeline-container {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        .cesium-animation-container {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        /* 标题样式 */
+        h3 {
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 16px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        /* 环境参数菜单样式 */
+        #envParamsMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #envParamsContent {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 280px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+            position: relative;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: -12px;
+            right: -12px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: red;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            line-height: 1;
+        }
+        
+        .close-btn:hover {
+            background: darkred;
+        }
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    
+    <!-- 地图选点提示框 - 移动到屏幕左上角 -->
+    <div id="mapSelectionOverlay">
+        <h2>🌍 地图选点</h2>
+        <p>请在地球上点击选择一个位置，点击"确认选择"<br>开始相机模拟模式<br>☀🌙会较大，仅用于表示其位置，不代表其真实大小</p>
+        
+        <div id="selectedLocationInfo">
+            <div class="location-info-item">
+                <span class="location-label">经度:</span>
+                <span class="location-value" id="selectedLongitude">未选择</span>
+            </div>
+            <div class="location-info-item">
+                <span class="location-label">纬度:</span>
+                <span class="location-value" id="selectedLatitude">未选择</span>
+            </div>
+        </div>
+        
+        <button id="confirmSelectionBtn" disabled>确认选择并进入相机模式</button>
+    </div>
+    
+    <div id="controls" style="display: none;">
+        <h3>相机控制菜单</h3>
+        
+        <div class="control-group">
+            <label for="zoomSlider">变焦倍数: <span id="zoomValue">1.0x</span></label>
+            <div class="slider-container">
+                <input type="range" id="zoomSlider" min="0.1" max="20" step="0.1" value="1.0">
+                <!-- 变焦刻度标记 -->
+                <div class="slider-mark" style="left: 5%;"></div>
+                <div class="slider-mark-label" style="left: 5%;">1x</div>
+                
+                <div class="slider-mark" style="left: 50%;"></div>
+                <div class="slider-mark-label" style="left: 50%;">10x</div>
+                
+                <div class="slider-mark" style="left: 95%;"></div>
+                <div class="slider-mark-label" style="left: 95%;">20x</div>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>预设变焦:</label>
+            <button id="btnZoom8x" class="button">8倍</button>
+            <button id="btnZoom5x" class="button">5倍</button>
+            <button id="btnZoom2x" class="button">2倍</button>
+            <button id="btnZoom1_5x" class="button">1.5倍</button>
+            <button id="btnZoom1x" class="button">1倍</button>
+            <button id="btnZoom05x" class="button">0.5倍</button>
+        </div>
+        
+        <div class="control-group">
+            <div class="switch-container">
+                <button id="envParamsBtn" class="button">环境参数</button>
+                <a href="index.html" class="button">返回主页</a>
+                <a href="faq.html" class="button">常见问题</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 时间控制 - 移动到屏幕正上方 -->
+    <div id="timeControls" style="display: none;">
+        <div id="timeDisplay">北京时间: <span id="currentTime">2026-03-06 00:00:00</span></div>
+        <div>
+            <input type="datetime-local" id="customTimeInput">
+            <button id="btnSetCustomTime" class="button">设置时间</button>
+        </div>
+    </div>
+    
+    <!-- 相机信息显示 -->
+    <div id="cameraInfo" style="display: none;">
+        <h3>相机信息</h3>
+        <div class="info-item">
+            <span class="info-label">经度:</span>
+            <span class="info-value" id="longitudeValue">0.000°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">纬度:</span>
+            <span class="info-value" id="latitudeValue">0.000°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">方位角:</span>
+            <span class="info-value" id="headingValue">0.0°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">俯仰角:</span>
+            <span class="info-value" id="pitchValue">0.0°</span>
+        </div>
+    </div>
+    
+    <!-- 方向键 -->
+    <div id="directionPad" style="display: none;">
+        <div id="btnUp" class="direction-btn">↑</div>
+        <div id="btnLeft" class="direction-btn">←</div>
+        <div id="btnDown" class="direction-btn">↓</div>
+        <div id="btnRight" class="direction-btn">→</div>
+    </div>
+    
+    <!-- 右遥感 - 控制镜头朝向 -->
+    <div id="rightJoystick" class="joystick" style="display: none;">
+        <div class="joystick-inner"></div>
+    </div>
+    
+    <!-- 镜头回正按钮 -->
+    <button id="resetCameraBtn" style="display: none;">镜头<br>回正</button>
+    
+    <!-- 高度滑块 -->
+    <div id="heightSliderContainer" style="display: none;">
+        <label for="heightSlider">距选取点地面<br>相对高度:<span id="heightValue">25m</span></label>
+        <div class="slider-container">
+            <input type="range" id="heightSlider" min="0" max="500" step="1" value="25">
+            <!-- 高度刻度标记 -->
+            <div class="slider-mark" style="left: 5%;"></div>
+            <div class="slider-mark-label" style="left: 5%;">25m</div>
+            
+            <div class="slider-mark" style="left: 20%;"></div>
+            <div class="slider-mark-label" style="left: 20%;">100m</div>
+            
+            <div class="slider-mark" style="left: 40%;"></div>
+            <div class="slider-mark-label" style="left: 40%;">200m</div>
+            
+            <div class="slider-mark" style="left: 100%;"></div>
+            <div class="slider-mark-label" style="left: 100%;">500m</div>
+        </div>
+    </div>
+    
+    <!-- 环境参数菜单 -->
+    <div id="envParamsMenu" style="display: none;">
+        <div id="envParamsContent">
+            <button id="closeEnvParamsBtn" class="close-btn">×</button>
+            <span style="font-weight: bold; font-size: 16px; color: #333;">环境参数调整</span>
+            <p style="font-size: 13px; color: #666; margin-top: 5px; margin-bottom: 15px;">模拟现实可能存在的特殊天气环境情况。</p>
+            
+            <div class="control-group">
+                <label class="switch-label">地形光照:</label>
+                <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">模拟昼夜效果，详见"常见问题"。</p>
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="terrainLightingSwitch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="control-group" style="margin-top: 20px;">
+                <label class="switch-label">能见度遮罩:</label>
+                <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">添加遮罩，遮挡一定距离外的物体，模拟低能见度下远处不可见的情况。</p>
+                <div style="margin-top: 10px;">
+                    <button id="visibility5km" class="button">5km</button>
+                    <button id="visibility10km" class="button">10km</button>
+                    <button id="visibility15km" class="button">15km</button>
+                    <button id="visibility20km" class="button">20km</button>
+                    <button id="visibility25km" class="button">25km</button>
+                </div>
+                
+                <div style="margin-top: 10px; display: flex; align-items: center;">
+                    <input type="number" id="customVisibility" placeholder="自定义能见度(km)" min="1" max="100" style="flex: 1; padding: 6px; margin-right: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    <button id="setCustomVisibility" class="button">设置</button>
+                    <button id="closeVisibility" class="button" style="background: #f44336; margin-left: 5px;">关闭遮罩</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 引入 Cesium 核心库（使用稳定版本 1.124） -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Cesium.js"></script>
+    <!-- 引入你的自定义脚本 -->
+    <script src="script.js"></script>
+
+</body>
+</html>

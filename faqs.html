@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>常见问题-风光摄影模拟器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: white;
+            color: black;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            width: 80%;
+            max-width: 800px;
+            border: 2px solid black;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #ccc;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .title-divider {
+            display: none;
+        }
+        @media (orientation: portrait) {
+            .title-divider {
+                display: block;
+            }
+        }
+        .header p {
+            font-size: 1.1em;
+            line-height: 1.5;
+            margin: 10px 0;
+        }
+        .faq-item {
+            margin-bottom: 25px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .faq-question {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .faq-answer {
+            line-height: 1.6;
+            color: #555;
+        }
+        .faq-answer p {
+            margin: 8px 0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ccc;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            border: 2px solid black;
+            border-radius: 5px;
+            text-decoration: none;
+            color: black;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .back-link:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                常见<span class="title-divider">
+                </span>问题
+            </h1>
+            <div style="text-align: center;">
+                <a href="index.html" class="back-link">返回主页</a>
+            </div>
+            <p>这里收集了使用时常见的功能解释、问题和解答。</p>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：选点时，地图上光秃秃的，没有地标，找不到地点怎么办？</div>
+            <div class="faq-answer">
+                <p>A：点击右上角偏右侧的按钮选择地图图层。默认是“Bing Maps Aerial（必应纯卫星地图）”，可以选择“Bing Maps Aerial with Labels（带标记的必应卫星地图）”。如此地图上会有英文标记，方便选点。</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：地形光照是啥意思？</div>
+            <div class="faq-answer">
+                <p>A：</p>
+                <p>开启：有日出、日落、黑夜、星空效果，模拟真实的太阳光照效果。</p>
+                <p>关闭：始终是类似白天正午时刻的光照效果。</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：为啥天上会有两个太阳？（未开启“地形光照”时）</div>
+            <div class="faq-answer">
+                <p>A：一个太阳看起来有明显的白色边界，并且有四射的光芒效果。这是“真太阳”，可以反映真实世界的太阳方位。</p>
+                <p>另一个太阳没有明显的边界，也没有光芒效果，看起来像是空中一团白色的光晕。</p>
+                <p>是“假太阳”，会始终固定在天顶。在未开启“地形光照”的情况下负责整体环境光照。若开启“环境参数/地形光照”则会消失。</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：为啥月球看起来大的吓人？</div>
+            <div class="faq-answer">
+                <p>A：设计时故意加大月球，目的是更清晰地显示月球方位。若不增大，月球会看起来特别小，难以在天空中找到。</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：为什么卫星地景加载这么慢？</div>
+            <div class="faq-answer">
+                <p>A：默认底图是Bing Maps Aerial（必应卫星地图），加载可能较慢。</p>
+                <p>建议在网络环境较好的情况下使用，若还无法正常加载，可以尝试科学上网。</p>
+                <p>由于自定义国内底图（如高德、百度、天地图）的难度较大，目前暂不考虑加入此功能。</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q：有时候明明点击选择了地点，但却没反应，无法进入相机模式？</div>
+            <div class="faq-answer">
+                <p>A：可能是网络太慢，无法正常加载三维地形数据。尝试在更好的网络环境下使用，或尝试科学上网。</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>此页面由Github Pages驱动，页面源码by Trae AI, HurricaneDD负责维护</p>
+        </div>
+    </div>
+</body>
+</html>

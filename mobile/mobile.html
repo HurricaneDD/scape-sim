@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>风光摄影模拟（移动版）</title>
+    <!-- 引入 Cesium 官方样式（必须） -->
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        /* 全局样式重置 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            font-family: Arial, sans-serif;
+        }
+        
+        /* 上部地球显示区域 */
+        #cesiumContainer {
+            flex: 1;
+            width: 100%;
+            background: black;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* 确保Cesium画布不会溢出 */
+        #cesiumContainer canvas {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        /* 下部控制区域 */
+        #controlPanel {
+            width: 100%;
+            height: 50%;
+            background: #f0f0f0;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            border-top: 2px solid #ddd;
+        }
+        
+        /* 控制区域布局 */
+        .control-row {
+            flex: 1;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-around;
+            padding: 6px 10px 10px;
+        }
+        
+        /* 方向键区域 */
+        .direction-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        #directionPad {
+            width: 150px;
+            height: 100px;
+            position: relative;
+        }
+        
+        .direction-btn {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: white;
+            border: 2px solid #0078d4;
+            color: #0078d4;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 11;
+        }
+        
+        #btnUp {
+            top: 0;
+            left: 50px;
+        }
+        
+        #btnLeft {
+            top: 50px;
+            left: 0;
+        }
+        
+        #btnDown {
+            top: 50px;
+            left: 50px;
+        }
+        
+        #btnRight {
+            top: 50px;
+            left: 100px;
+        }
+        
+        /* 遥感区域 */
+        .joystick-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .joystick {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #0078d4;
+            touch-action: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: relative;
+            z-index: 11;
+        }
+        
+        .joystick-inner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #0078d4;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: transform 0.1s ease-out;
+        }
+        
+        /* 镜头回正按钮 */
+        #resetCameraBtn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #0078d4;
+            color: #0078d4;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 11;
+        }
+        
+        /* 底部按钮区域 */
+        .bottom-buttons {
+            display: flex;
+            justify-content: space-around;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+        }
+        
+        .control-btn {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 7px;
+            font-weight: bold;
+            flex: 1;
+            margin: 0 5px;
+            text-align: center;
+            z-index: 11;
+        }
+        
+        /* 高度控制区域 */
+        .height-section {
+            padding: 10px;
+            border-top: 1px solid #ddd;
+        }
+        
+        #heightSliderContainer {
+            position: absolute;
+            bottom: 39%;
+            right: 2%;
+            width: 43%;
+            background: white;
+            padding: 6px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 1001;
+        }
+        
+        /* 滑块容器 */
+        .slider-container {
+            position: relative;
+            width: 100%;
+            margin: 7px 0;
+        }
+        
+        /* 滑块刻度 */
+        .slider-ticks {
+            position: absolute;
+            top: 15px;
+            left: 0;
+            right: 0;
+            height: 20px;
+            pointer-events: none;
+        }
+        
+        .tick {
+            position: absolute;
+            top: 0;
+            width: 1px;
+            height: 6px;
+            background: #999;
+            transform: translateX(-50%);
+        }
+        
+        .tick-label {
+            position: absolute;
+            top: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 9px;
+            color: #666;
+            white-space: nowrap;
+        }
+        
+        /* 地形光照开关样式 */
+        #terrainLightingSwitch:checked + span + span {
+            transform: translateX(16px);
+        }
+        
+        #terrainLightingSwitch:checked + span {
+            background-color: #4CAF50;
+        }
+        
+        #terrainLightingSwitch + span {
+            background-color: #f44336;
+        }
+        
+        #heightSlider {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        #heightSlider::-webkit-slider-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 5%, 
+                #0078d4 5%, 
+                #0078d4 10%, 
+                #e0e0e0 10%, 
+                #e0e0e0 20%, 
+                #0078d4 20%, 
+                #0078d4 25%, 
+                #e0e0e0 25%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 100%);
+        }
+        
+        #heightSlider::-moz-range-track {
+            background: linear-gradient(to right, 
+                #e0e0e0 0%, 
+                #e0e0e0 5%, 
+                #0078d4 5%, 
+                #0078d4 10%, 
+                #e0e0e0 10%, 
+                #e0e0e0 20%, 
+                #0078d4 20%, 
+                #0078d4 25%, 
+                #e0e0e0 25%, 
+                #e0e0e0 40%, 
+                #0078d4 40%, 
+                #0078d4 50%, 
+                #e0e0e0 50%, 
+                #e0e0e0 100%);
+        }
+        
+        #heightSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        #heightSlider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #0078d4;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        #heightValue {
+            color: #0078d4;
+            font-weight: bold;
+        }
+        
+        /* 地图选点提示框 */
+        #mapSelectionOverlay {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.98);
+            padding: 20px;
+            border-radius: 15px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 2000;
+            text-align: center;
+            min-width: 300px;
+            max-width: 90%;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            border: 3px solid #0078d4;
+        }
+        
+        /* 移动设备适配 */
+        @media (max-width: 768px) {
+            #mapSelectionOverlay {
+                width: 90%;
+                max-width: none;
+                padding: 15px;
+            }
+            
+            #mapSelectionOverlay h2 {
+                font-size: 18px;
+                margin-bottom: 10px;
+            }
+            
+            #mapSelectionOverlay p {
+                font-size: 13px;
+                margin-bottom: 15px;
+            }
+        }
+        
+        #mapSelectionOverlay h2 {
+            color: #0078d4;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        #mapSelectionOverlay p {
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
+        }
+        
+        #selectedLocationInfo {
+            background: rgba(240, 240, 240, 0.7);
+            padding: 12px;
+            border-radius: 8px;
+            margin: 15px 0;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        
+        .location-info-item {
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+        
+        .location-label {
+            color: #0078d4;
+            display: inline-block;
+            width: 70px;
+            font-weight: 500;
+        }
+        
+        .location-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        #confirmSelectionBtn {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: background-color 0.2s;
+        }
+        
+        #confirmSelectionBtn:hover {
+            background: #005a9e;
+        }
+        
+        #confirmSelectionBtn:disabled {
+            background: #ccc;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        /* 控制菜单 */
+        #controls {
+            position: absolute;
+            bottom: 1%;
+            left: 2%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 5px;
+            border-radius: 8px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            width: 50%;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+        }
+        
+        .control-group {
+            margin-bottom: 5px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 3px;
+            margin-bottom: 3px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            display: inline-block;
+            width: auto;
+            min-width: 40px;
+        }
+        
+        .button:hover {
+            background: #005a9e;
+        }
+        
+        .button:disabled {
+            background: #ccc;
+            color: #666;
+            cursor: not-allowed;
+        }
+        
+        /* 时间控制 */
+        #timeControls {
+            position: absolute;
+            bottom: 1%;
+            right: 2%;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 5px 10px;
+            border-radius: 8px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            text-align: center;
+            width: 43%;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+        }
+        
+        /* 相机信息显示 */
+        #cameraInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px 8px;
+            border-radius: 4px;
+            color: #333;
+            font-family: Arial, sans-serif;
+            z-index: 1000;
+            max-width: 120px;
+            width: 120px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+            font-size: 9px;
+        }
+        
+        .info-item {
+            margin-bottom: 0;
+            font-size: 10px;
+            line-height: 1.3;
+        }
+        
+        .info-label {
+            color: #0078d4;
+            display: inline-block;
+            width: 50px;
+            font-weight: 500;
+            font-size: 10px;
+        }
+        
+        .info-value {
+            font-weight: bold;
+            color: #333;
+            font-size: 10px;
+        }
+        
+        #timeDisplay {
+            margin: 2px 0;
+            font-size: 11px;
+            color: #333;
+        }
+        
+        #currentTime {
+            font-weight: bold;
+            color: #0078d4;
+        }
+        
+        #customTimeInput {
+            width: 120px;
+            padding: 3px;
+            margin-right: 5px;
+            border: 1px solid #ddd;
+            background: white;
+            color: #333;
+            border-radius: 4px;
+        }
+        
+        /* 选择点标记 */
+        .selection-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(255, 0, 0, 0.8);
+            border: 3px solid white;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1500;
+        }
+        
+        /* 标题样式 */
+        h3 {
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 16px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        
+        /* 确保Cesium控件不会影响布局 */
+        .cesium-viewer {
+            position: absolute !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        /* 禁用Cesium的默认鼠标控制 */
+        .cesium-viewer-cesiumWidgetContainer {
+            touch-action: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- 上部地球显示区域 -->
+    <div id="cesiumContainer"></div>
+    
+    <!-- 下部控制区域 -->
+    <div id="controlPanel">
+        <!-- 地图选点提示框 -->
+        <div id="mapSelectionOverlay">
+            <h2>🌍 地图选点</h2>
+            <p>请在地球上点击选择一个位置，点击"确认"<br>开始相机模拟模式<br>☀🌙会较大，仅用于表示其位置，不代表其真实大小</p>
+            
+            <div id="selectedLocationInfo">
+                <div class="location-info-item">
+                    <span class="location-label">经度:</span>
+                    <span class="location-value" id="selectedLongitude">未选择</span>
+                </div>
+                <div class="location-info-item">
+                    <span class="location-label">纬度:</span>
+                    <span class="location-value" id="selectedLatitude">未选择</span>
+                </div>
+            </div>
+            
+            <button id="confirmSelectionBtn" disabled>确认选择并进入相机模式</button>
+        </div>
+        
+        <!-- 第一行：方向键、镜头回正、右遥感 -->
+        <div class="control-row">
+            <!-- 方向键 -->
+            <div class="direction-section">
+                <div id="directionPad" style="display: none;">
+                    <div id="btnUp" class="direction-btn">↑</div>
+                    <div id="btnLeft" class="direction-btn">←</div>
+                    <div id="btnDown" class="direction-btn">↓</div>
+                    <div id="btnRight" class="direction-btn">→</div>
+                </div>
+            </div>
+            
+            <!-- 镜头回正按钮 -->
+            <div>
+                <button id="resetCameraBtn" style="display: none;">镜头<br>回正</button>
+            </div>
+            
+            <!-- 右遥感 - 控制镜头朝向 -->
+            <div class="joystick-section">
+                <div id="rightJoystick" class="joystick" style="display: none;">
+                    <div class="joystick-inner"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 第二行：高度控制 -->
+        <div class="height-section">
+            <div id="heightSliderContainer" style="display: none;">
+                <label for="heightSlider">距选取点地面<br>相对高度:<span id="heightValue">25m</span></label>
+                <div class="slider-container">
+                    <input type="range" id="heightSlider" min="0" max="200" step="1" value="25">
+                    <div class="slider-ticks">
+                        <div class="tick" style="left: 12.5%"><span class="tick-label">25m</span></div>
+                        <div class="tick" style="left: 50%"><span class="tick-label">100m</span></div>
+                        <div class="tick" style="left: 100%"><span class="tick-label">200m</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 第三行：底部按钮 -->
+        <div class="bottom-buttons">
+            <button id="cameraControlBtn" class="control-btn" style="display: none;">相机控制菜单</button>
+            <button id="timeControlBtn" class="control-btn" style="display: none;">设置时间</button>
+        </div>
+    </div>
+    
+    <!-- 相机控制菜单 -->
+    <div id="controls" style="display: none;">
+        <div class="control-group">
+                <label for="zoomSlider">变焦倍数: <span id="zoomValue">1.0x</span></label>
+                <div class="slider-container">
+                    <input type="range" id="zoomSlider" min="0.5" max="16" step="0.1" value="1.0" style="width: 100%; margin: 0; padding: 0;">
+                    <div class="slider-ticks">
+                        <div class="tick" style="left: 3.125%"><span class="tick-label">1x</span></div>
+                        <div class="tick" style="left: 28.125%"><span class="tick-label">5x</span></div>
+                        <div class="tick" style="left: 46.875%"><span class="tick-label">8x</span></div>
+                        <div class="tick" style="left: 100%"><span class="tick-label">16x</span></div>
+                    </div>
+                </div>
+            </div>
+        
+        <hr style="margin: 5px 0; border: 0; border-top: 1px solid #ddd;">
+        
+        <div class="control-group">
+            <div style="display: flex; flex-wrap: wrap; gap: 3px;">
+                <button id="btnZoom8x" class="button">8x</button>
+                <button id="btnZoom5x" class="button">5x</button>
+                <button id="btnZoom2x" class="button">2x</button>
+                <button id="btnZoom1_5x" class="button">1.5x</button>
+                <button id="btnZoom1x" class="button">1x</button>
+                <button id="btnZoom05x" class="button">0.5x</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>地形光照:</label>
+            <div style="display: flex; align-items: center;">
+                <label style="position: relative; display: inline-block; width: 40px; height: 20px;">
+                    <input type="checkbox" id="terrainLightingSwitch" style="opacity: 0; width: 0; height: 0;">
+                    <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; transition: .4s; border-radius: 20px;"></span>
+                    <span style="position: absolute; content: ''; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;"></span>
+                </label>
+                <a href="../index.html" class="button" style="margin-left: 10px; font-size: 10px; padding: 4px 8px;">主页</a>
+                <a href="../faq.html" class="button" style="font-size: 10px; padding: 4px 8px;">FAQ</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 时间控制 -->
+    <div id="timeControls" style="display: none;">
+        <div id="timeDisplay">北京时间: <span id="currentTime">2026-03-06 00:00:00</span></div>
+        <div>
+            <input type="datetime-local" id="customTimeInput">
+            <button id="btnSetCustomTime" class="button">设置时间</button>
+        </div>
+    </div>
+    
+    <!-- 相机信息显示 -->
+    <div id="cameraInfo" style="display: none;">
+        <div class="info-item">
+            <span class="info-label">经度:</span>
+            <span class="info-value" id="longitudeValue">0.000°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">纬度:</span>
+            <span class="info-value" id="latitudeValue">0.000°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">方位角:</span>
+            <span class="info-value" id="headingValue">0.0°</span>
+        </div>
+        <div class="info-item">
+            <span class="info-label">俯仰角:</span>
+            <span class="info-value" id="pitchValue">0.0°</span>
+        </div>
+    </div>
+    
+    <!-- 引入 Cesium 核心库（使用稳定版本 1.139） -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Cesium.js"></script>
+    <!-- 引入你的自定义脚本 -->
+    <script src="script.js"></script>
+
+</body>
+</html>

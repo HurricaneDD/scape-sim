@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主页-风光摄影模拟器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: white;
+            color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            width: 80%;
+            max-width: 800px;
+            border: 2px solid black;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #ccc;
+        }
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .title-divider {
+            display: none;
+        }
+        @media (orientation: portrait) {
+            .title-divider {
+                display: block;
+            }
+        }
+        .header p {
+            font-size: 1.1em;
+            line-height: 1.5;
+            margin: 10px 0;
+        }
+        .header a {
+            color: black;
+            text-decoration: underline;
+        }
+        .header a:hover {
+            color: #555;
+        }
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .buttons-row2 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 0;
+        }
+        .btn {
+            padding: 20px;
+            text-align: center;
+            border: 2px solid black;
+            border-radius: 5px;
+            text-decoration: none;
+            color: black;
+            font-size: 1.2em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .btn:hover {
+            background-color: #f0f0f0;
+            transform: translateY(-2px);
+        }
+        .btn .small-text {
+            display: block;
+            font-size: 0.7em;
+            font-weight: normal;
+            color: #666;
+            margin-top: 5px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ccc;
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                风光摄影<span class="title-divider">
+                </span>模拟器
+            </h1>
+            <p>一个基于<a href="https://cesium.com/platform/cesiumjs/" target="_blank">CesiumJS</a>的工具，用于模拟在地球上实景的风光摄影。</p>
+            <p>以便于摄影者提前了解风景、太阳光线情况、估算所需焦段。</p>
+            <p>灵感来源于APP"极摄"。</p>
+        </div>
+        <div class="buttons">
+            <a href="final.html" class="btn" target="_blank">横屏版<span class="small-text">适用于电脑、平板</span></a>
+            <a href="mobile/mobile.html" class="btn" target="_blank">竖屏版<span class="small-text">适用于手机</span></a>
+        </div>
+        <div class="buttons-row2">
+            <a href="faqs.html" class="btn" target="_blank">常见问题</a>
+            <a href="logs.html" class="btn" target="_blank">更新日志</a>
+            <a href="https://github.com/HurricaneDD/scape-sim" class="btn" target="_blank">Github</a>
+        </div>
+        <div class="footer">
+            <p>此页面由Github Pages驱动，页面源码by Trae AI, HurricaneDD负责维护</p>
+        </div>
+    </div>
+</body>
+</html>

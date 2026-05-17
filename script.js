@@ -1035,6 +1035,32 @@ function initializeCameraControls() {
     });
 }
 
+// 隐藏UI相关元素
+const hideUIBtn = document.getElementById('hideUIBtn');
+const exitHideModeBtn = document.getElementById('exitHideModeBtn');
+
+// 隐藏UI模式
+function enterHideMode() {
+    document.body.classList.add('hidden-mode');
+    exitHideModeBtn.style.display = 'flex';
+}
+
+// 退出隐藏UI模式
+function exitHideMode() {
+    document.body.classList.remove('hidden-mode');
+    exitHideModeBtn.style.display = 'none';
+}
+
+// 隐藏UI按钮事件监听
+hideUIBtn.addEventListener('click', function() {
+    enterHideMode();
+});
+
+// 退出隐藏模式按钮事件监听
+exitHideModeBtn.addEventListener('click', function() {
+    exitHideMode();
+});
+
 // 主初始化函数
 function main() {
     console.log("开始初始化...");

@@ -671,6 +671,41 @@
         .close-btn:hover {
             background: darkred;
         }
+
+        #exitHideModeBtn {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 0, 0, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        #exitHideModeBtn:hover {
+            background: rgba(255, 0, 0, 0.9);
+        }
+
+        .hidden-mode #controls,
+        .hidden-mode #timeControls,
+        .hidden-mode #cameraInfo,
+        .hidden-mode #directionPad,
+        .hidden-mode #rightJoystick,
+        .hidden-mode #resetCameraBtn,
+        .hidden-mode #heightSliderContainer,
+        .hidden-mode #mapSelectionOverlay {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -727,6 +762,7 @@
         <div class="control-group">
             <div class="switch-container">
                 <button id="envParamsBtn" class="button">环境参数</button>
+                <button id="hideUIBtn" class="button">隐藏UI</button>
                 <a href="index.html" class="button">返回主页</a>
                 <a href="faq.html" class="button">常见问题</a>
             </div>
@@ -778,7 +814,10 @@
     
     <!-- 镜头回正按钮 -->
     <button id="resetCameraBtn" style="display: none;">镜头<br>回正</button>
-    
+
+    <!-- 退出隐藏模式按钮 -->
+    <button id="exitHideModeBtn">×</button>
+
     <!-- 高度滑块 -->
     <div id="heightSliderContainer" style="display: none;">
         <label for="heightSlider">距选取点地面<br>相对高度:<span id="heightValue">25m</span></label>

@@ -1,0 +1,8 @@
+{
+  "name": "风光摄影模拟器",
+  "description": "基于 CesiumJS 的实景风光摄影模拟工具，用于模拟在地球上实景的风光摄影、光线与焦段估算。",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -267,6 +267,19 @@ function computeCirclePoints(radiusMeters, segments = 96) {
 
 > ⚠️ 只设置 `Cesium.Camera.DEFAULT_VIEW_RECTANGLE = Cesium.Rectangle.fromDegrees(80, 22, 130, 50);` **不生效**——会被 `initializeGlobe` 里的 `camera.setView` 覆盖，必须改后者。
 
+### 5.7 相机模式进入性能优化（选点飞入无缝化）
+
+- **问题现象**：选点后点击"确认选择并进入相机模式"，画面经常卡在原地不动 2~6 秒，随后才开始播放飞入动画。
+- **根本原因**：
+  原 `startCameraMode` 函数在用户点击后，同步串行等待两项异步网络请求：
+  1. `await initializeTerrain()`：向 Cesium Ion 请求并建立 `Cesium.createWorldTerrainAsync` 地形图层；
+  2. `await Cesium.sampleTerrainMostDetailed(viewer.terrainProvider, [cartographic])`：拉取该经纬度最精细瓦片切片采样绝对高程。
+  在两项网络 I/O 阻塞期间，相机飞入动画（`viewer.camera.flyTo`）被完全卡住，用户感知为界面假死。
+- **优化方案与实现（双端同步）**：
+  1. **地形预加载（Preload）**：在应用启动阶段 `main()` 中即后台发起 `initializeTerrain()` 并通过 `terrainInitPromise` 缓存 Promise，用户选点时 3D 地形早已就绪。
+  2. **选点异步预采样（Pre-sample）**：用户在地图上点击（`LEFT_CLICK`）的瞬间，提取 `cartographic.height` 作为初始估算，同时后台异步启动高精度地形采样 `preloadedTerrainPromise`。在用户移动鼠标或手指点击确认按钮的时间差内，采样通常已静默完成。
+  3. **零等待飞入（Zero-wait FlyTo）**：点击确认后，以已获取的高程（或估算高程）为终点立即触发 `flyTo` 动画（响应时间降至 0ms）；飞行的 3 秒过程与后台采样完全重叠并行，飞行结束（`complete` 回调）时校准高精度地表高度并执行 `adjustHeight(25)`。
+
 ---
 
 ## 6. 踩坑记录与注意事项（必读）
@@ -353,6 +366,7 @@ function computeCirclePoints(radiusMeters, segments = 96) {
 10. **电脑版增强功能**：环境参数菜单（地形光照搬入 + 能见度遮罩 Wall 实现 + 多项文案/排版修正）。
 11. **隐藏UI功能**：`2026-05-02 14:00` 记入 `logs.html`。
 12. **移动版功能增强**：控制区新增"主页/FAQ"链接（缩小字号）、高度 200m 刻度确认、滑块与刻度对齐最终修复。
+13. **进入相机模式响应优化（双端同步）**：`2026-10-20 15:30`。彻底修复选点后点击"进入相机模式"卡顿数秒的问题（启动预加载 3D 地形 + 选点后台预采样高程 + 0ms 立即启动飞行 + 落地校准精确高程）。
 
 ---
 

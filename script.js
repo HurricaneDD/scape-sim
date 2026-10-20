@@ -32,6 +32,9 @@ let isSelectionMode = true; // 初始为选点模式
 let selectedPosition = null; // 存储选中的位置
 let selectionMarker = null; // 选择点标记
 let baseTerrainHeight = 0; // 存储地表基础高度
+let terrainInitPromise = null; // 3D地形预加载Promise
+let preloadedTerrainPromise = null; // 选点位置的高精度地形采样Promise
+let preloadedTerrainHeight = null; // 选点位置已估算/预采样的地形高度
 
 // 获取DOM元素
 const mapSelectionOverlay = document.getElementById('mapSelectionOverlay');
@@ -215,6 +218,30 @@ function setupMapSelection() {
             // 添加或更新选择点标记
             addSelectionMarker(intersection);
             
+            // 记录选点位置的拾取高度
+            const estimatedHeight = (cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0;
+            preloadedTerrainHeight = estimatedHeight;
+            
+            // 立即在后台触发最高精度高程预采样，在用户挪动鼠标去点击确认按钮的时间内完成
+            preloadedTerrainPromise = (async () => {
+                try {
+                    await initializeTerrain();
+                    if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+                        const terrainSample = await Cesium.sampleTerrainMostDetailed(
+                            viewer.terrainProvider, 
+                            [cartographic]
+                        );
+                        if (terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
+                            preloadedTerrainHeight = terrainSample[0].height;
+                            return terrainSample[0].height;
+                        }
+                    }
+                } catch (e) {
+                    console.log("后台预采样高精度地形高度失败，将采用拾取高度:", e);
+                }
+                return estimatedHeight;
+            })();
+            
             console.log(`选中位置: 经度 ${longitude.toFixed(6)}°, 纬度 ${latitude.toFixed(6)}°`);
         }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
@@ -282,28 +309,15 @@ async function startCameraMode(position) {
     // 隐藏选点提示框
     mapSelectionOverlay.style.display = 'none';
     
-    // 加载3D地形
-    await initializeTerrain();
-    
-    // 获取选中点的地形高度
+    // 获取选中点的地理坐标
     const cartographic = Cesium.Cartographic.fromCartesian(position);
-    let terrainHeight = 0;
     
-    if (viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
-        terrainHeight = 0;
-    } else {
-        try {
-            const terrainSample = await Cesium.sampleTerrainMostDetailed(
-                viewer.terrainProvider, 
-                [cartographic]
-            );
-            terrainHeight = terrainSample[0].height;
-        } catch (error) {
-            console.log("获取地形高度失败:", error);
-            terrainHeight = 0;
-        }
+    // 优先采用预采样得到的高程，或拾取点高度（无需等待网络即可立即起飞）
+    let terrainHeight = preloadedTerrainHeight;
+    if (terrainHeight === null || isNaN(terrainHeight)) {
+        terrainHeight = (cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0;
     }
-    
+    if (terrainHeight < -500) terrainHeight = 0;
     baseTerrainHeight = terrainHeight;
     
     // 计算飞行目标位置（地面高度+25米）
@@ -314,7 +328,7 @@ async function startCameraMode(position) {
         targetHeight
     );
     
-    // 飞行到选中位置
+    // 立即启动飞行动画，消除原地卡顿数秒等待网络请求的瓶颈
     viewer.camera.flyTo({
         destination: targetPosition,
         orientation: {
@@ -323,14 +337,26 @@ async function startCameraMode(position) {
             roll: 0.0
         },
         duration: 3, // 3秒飞行时间
-        complete: function() {
+        complete: async function() {
+            // 在3秒飞行期间，若后台预采样高精度高程完成，则校准精确基准高度
+            if (preloadedTerrainPromise) {
+                try {
+                    const detailedHeight = await preloadedTerrainPromise;
+                    if (detailedHeight !== null && !isNaN(detailedHeight)) {
+                        baseTerrainHeight = detailedHeight;
+                    }
+                } catch (e) {
+                    console.log("高精度高程校准跳过:", e);
+                }
+            }
+            
             // 飞行完成后显示相机控制界面
             showCameraControls();
             
             // 初始化相机控制
             initializeCameraControls();
             
-            // 设置初始高度
+            // 精确设置初始高度（基于校准后的地表高度）
             adjustHeight(25);
             
             console.log("已进入相机模式");
@@ -367,19 +393,29 @@ function showCameraControls() {
 
 // 根据知识库内容，使用正确的3D地形方法
 async function initializeTerrain() {
-    try {
-        // 使用 createWorldTerrainAsync 创建地形提供者
-        const terrainProvider = await Cesium.createWorldTerrainAsync({
-            requestVertexNormals: false,  // 默认不启用地形光照
-            requestWaterMask: false       // 默认不启用水体效果
-        });
-        viewer.terrainProvider = terrainProvider;
-        console.log("3D地形已加载");
-    } catch (error) {
-        console.log("地形加载失败:", error);
-        // 如果地形加载失败，使用椭球体作为替代
-        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+    if (terrainInitPromise) {
+        return terrainInitPromise;
     }
+    
+    terrainInitPromise = (async () => {
+        try {
+            // 使用 createWorldTerrainAsync 创建地形提供者
+            const terrainProvider = await Cesium.createWorldTerrainAsync({
+                requestVertexNormals: false,  // 默认不启用地形光照
+                requestWaterMask: false       // 默认不启用水体效果
+            });
+            viewer.terrainProvider = terrainProvider;
+            console.log("3D地形已加载");
+            return terrainProvider;
+        } catch (error) {
+            console.log("地形加载失败:", error);
+            // 如果地形加载失败，使用椭球体作为替代
+            viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+            return viewer.terrainProvider;
+        }
+    })();
+    
+    return terrainInitPromise;
 }
 
 // 变焦控制变量
@@ -1067,6 +1103,9 @@ function main() {
     
     // 初始化完整地球视图
     initializeGlobe();
+    
+    // 提前在后台预加载3D地形，避免选点进入相机模式时因发起网络请求而产生数秒的原地卡顿
+    initializeTerrain();
 }
 
 // 启动主程序

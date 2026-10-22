@@ -35,6 +35,7 @@ let baseTerrainHeight = 0; // 存储地表基础高度
 let terrainInitPromise = null; // 3D地形预加载Promise
 let preloadedTerrainPromise = null; // 选点位置的高精度地形采样Promise
 let preloadedTerrainHeight = null; // 选点位置已估算/预采样的地形高度
+let selectionCounter = 0; // 选点版本计数器，避免并发异步覆盖
 
 // 获取DOM元素
 const mapSelectionOverlay = document.getElementById('mapSelectionOverlay');
@@ -200,9 +201,15 @@ function setupMapSelection() {
             // 添加或更新选择点标记
             addSelectionMarker(intersection);
             
-            // 记录选点位置的拾取高度
-            const estimatedHeight = (cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0;
+            // 优先获取当前已有瓦片高程，若不可用则使用射线拾取高程
+            const globeHeight = viewer.scene.globe.getHeight(cartographic);
+            const estimatedHeight = (typeof globeHeight === 'number' && !isNaN(globeHeight)) 
+                ? globeHeight 
+                : ((cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0);
             preloadedTerrainHeight = estimatedHeight;
+            
+            // 记录版本号防止多次选点请求竞态覆盖
+            const currentSelectionId = ++selectionCounter;
             
             // 立即在后台触发最高精度高程预采样，在用户点击确认按钮的时间内完成
             preloadedTerrainPromise = (async () => {
@@ -213,7 +220,7 @@ function setupMapSelection() {
                             viewer.terrainProvider, 
                             [cartographic]
                         );
-                        if (terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
+                        if (currentSelectionId === selectionCounter && terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
                             preloadedTerrainHeight = terrainSample[0].height;
                             return terrainSample[0].height;
                         }
@@ -282,6 +289,12 @@ async function startCameraMode(position) {
     // 退出选点模式
     isSelectionMode = false;
     
+    // 立即给用户直接的交互反馈
+    if (confirmSelectionBtn) {
+        confirmSelectionBtn.textContent = "正在进入机位...";
+        confirmSelectionBtn.disabled = true;
+    }
+    
     // 移除选择点标记
     if (selectionMarker) {
         selectionMarker.remove();
@@ -294,10 +307,13 @@ async function startCameraMode(position) {
     // 获取选中点的地理坐标
     const cartographic = Cesium.Cartographic.fromCartesian(position);
     
-    // 优先采用预采样得到的高程，或拾取点高度（无需等待网络即可立即起飞）
+    // 优先采用预采样得到的高程，或已有瓦片/拾取点高度（无需等待网络即可立即起飞）
     let terrainHeight = preloadedTerrainHeight;
     if (terrainHeight === null || isNaN(terrainHeight)) {
-        terrainHeight = (cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0;
+        const globeHeight = viewer.scene.globe.getHeight(cartographic);
+        terrainHeight = (typeof globeHeight === 'number' && !isNaN(globeHeight)) 
+            ? globeHeight 
+            : ((cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0);
     }
     if (terrainHeight < -500) terrainHeight = 0;
     baseTerrainHeight = terrainHeight;
@@ -310,7 +326,9 @@ async function startCameraMode(position) {
         targetHeight
     );
     
-    // 立即启动飞行动画，消除原地卡顿数秒等待网络请求的瓶颈
+    // 立即启动飞行动画：
+    // 使用 QUADRATIC_IN_OUT 缓动和 2.0 秒时长，使镜头从第 1 帧起就具有清晰的飞入速度感，
+    // 消除默认 EXPONENTIAL 缓动在前 1.5 秒地球看似静止未动的不良感知。
     viewer.camera.flyTo({
         destination: targetPosition,
         orientation: {
@@ -318,28 +336,23 @@ async function startCameraMode(position) {
             pitch: Cesium.Math.toRadians(0),      // 俯仰角为0（水平）
             roll: 0.0
         },
-        duration: 3, // 3秒飞行时间
-        complete: async function() {
-            // 在3秒飞行期间，若后台预采样高精度高程完成，则校准精确基准高度
-            if (preloadedTerrainPromise) {
-                try {
-                    const detailedHeight = await preloadedTerrainPromise;
-                    if (detailedHeight !== null && !isNaN(detailedHeight)) {
-                        baseTerrainHeight = detailedHeight;
-                    }
-                } catch (e) {
-                    console.log("高精度高程校准跳过:", e);
-                }
-            }
-            
-            // 飞行完成后显示相机控制界面
+        duration: 2.0, // 缩短至2秒，起飞与降落干脆利落
+        easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+        complete: function() {
+            // 落地瞬间立即展示并激活操作控件，绝不等待任何异步网络 I/O，消除二次卡死
             showCameraControls();
-            
-            // 初始化相机控制
             initializeCameraControls();
-            
-            // 精确设置初始高度（基于校准后的地表高度）
             adjustHeight(25);
+            
+            // 后台异步校准精确地表高度（若之前高精度采样稍慢完成，则无缝平滑校准）
+            if (preloadedTerrainPromise) {
+                preloadedTerrainPromise.then(detailedHeight => {
+                    if (detailedHeight !== null && !isNaN(detailedHeight) && Math.abs(detailedHeight - baseTerrainHeight) > 1) {
+                        baseTerrainHeight = detailedHeight;
+                        adjustHeight(currentHeight || 25);
+                    }
+                }).catch(() => {});
+            }
             
             console.log("已进入相机模式");
         }

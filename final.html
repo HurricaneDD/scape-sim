@@ -45,95 +45,100 @@
         /* 变焦滑块容器 */
         .slider-container {
             position: relative;
-            margin: 10px 0;
+            margin: 10px 0 26px 0;
+            width: 100%;
         }
         
         #zoomSlider {
             width: 100%;
             height: 6px;
-            background: #e0e0e0;
+            background: #cbd5e1;
             border-radius: 3px;
             outline: none;
             -webkit-appearance: none;
+            display: block;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
         }
         
         /* 滑块轨道 */
         #zoomSlider::-webkit-slider-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 10%, 
-                #0078d4 10%, 
-                #0078d4 20%, 
-                #e0e0e0 20%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 80%, 
-                #0078d4 80%, 
-                #0078d4 90%, 
-                #e0e0e0 90%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
         #zoomSlider::-moz-range-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 10%, 
-                #0078d4 10%, 
-                #0078d4 20%, 
-                #e0e0e0 20%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 80%, 
-                #0078d4 80%, 
-                #0078d4 90%, 
-                #e0e0e0 90%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
-        /* 滑块按钮 */
+        /* 滑块长条矩形指示器 - 以中心点严格对齐刻度 */
         #zoomSlider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 22px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            margin-top: -8px; /* (6px - 22px) / 2 = -8px，使长条矩形在垂直方向严格居中穿过轨道 */
+            transition: background-color 0.15s, transform 0.15s;
+        }
+        
+        #zoomSlider:hover::-webkit-slider-thumb,
+        #zoomSlider:active::-webkit-slider-thumb {
+            background: #005a9e;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            transform: scaleX(1.15);
         }
         
         #zoomSlider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 22px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            transition: background-color 0.15s, transform 0.15s;
         }
         
-        /* 滑块刻度标记 */
+        #zoomSlider:hover::-moz-range-thumb,
+        #zoomSlider:active::-moz-range-thumb {
+            background: #005a9e;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            transform: scaleX(1.15);
+        }
+        
+        /* 滑块刻度标记与文字（严格按中心线对齐） */
         .slider-mark {
             position: absolute;
-            top: -7px;
-            width: 3px;
-            height: 16px;
-            background: #0078d4;
+            top: -4px;
+            width: 2px;
+            height: 14px;
+            background: #94a3b8;
             transform: translateX(-50%);
+            pointer-events: none;
+            z-index: 1;
+            border-radius: 1px;
         }
         
         .slider-mark-label {
             position: absolute;
-            top: 20px;
-            font-size: 10px;
-            color: #0078d4;
+            top: 18px;
+            font-size: 11px;
+            color: #475569;
             transform: translateX(-50%);
             white-space: nowrap;
-            font-weight: 500;
+            font-weight: 600;
+            pointer-events: none;
+            user-select: none;
         }
         
         #zoomValue {
@@ -648,6 +653,29 @@
             position: relative;
         }
         
+        /* 能见度选项按钮与选中高亮 */
+        .visibility-option-btn {
+            background: #f1f5f9 !important;
+            color: #334155 !important;
+            border: 1px solid #cbd5e1 !important;
+            transition: all 0.2s ease !important;
+        }
+        
+        .visibility-option-btn:hover {
+            background: #e2e8f0 !important;
+            color: #0f172a !important;
+            border-color: #94a3b8 !important;
+        }
+        
+        .visibility-option-btn.active {
+            background: #0078d4 !important;
+            color: #ffffff !important;
+            border-color: #005a9e !important;
+            font-weight: bold !important;
+            box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.45) !important;
+            transform: translateY(-1px);
+        }
+        
         .close-btn {
             position: absolute;
             top: -12px;
@@ -737,15 +765,18 @@
             <label for="zoomSlider">变焦倍数: <span id="zoomValue">1.0x</span></label>
             <div class="slider-container">
                 <input type="range" id="zoomSlider" min="0.1" max="20" step="0.1" value="1.0">
-                <!-- 变焦刻度标记 -->
-                <div class="slider-mark" style="left: 5%;"></div>
-                <div class="slider-mark-label" style="left: 5%;">1x</div>
+                <!-- 变焦刻度标记（以长条矩形指示器中心点为对其标准） -->
+                <div class="slider-mark" style="left: calc(3px + 0.04523 * (100% - 6px));"></div>
+                <div class="slider-mark-label" style="left: calc(3px + 0.04523 * (100% - 6px));">1x</div>
                 
-                <div class="slider-mark" style="left: 50%;"></div>
-                <div class="slider-mark-label" style="left: 50%;">10x</div>
+                <div class="slider-mark" style="left: calc(3px + 0.24623 * (100% - 6px));"></div>
+                <div class="slider-mark-label" style="left: calc(3px + 0.24623 * (100% - 6px));">5x</div>
                 
-                <div class="slider-mark" style="left: 95%;"></div>
-                <div class="slider-mark-label" style="left: 95%;">20x</div>
+                <div class="slider-mark" style="left: calc(3px + 0.49749 * (100% - 6px));"></div>
+                <div class="slider-mark-label" style="left: calc(3px + 0.49749 * (100% - 6px));">10x</div>
+                
+                <div class="slider-mark" style="left: calc(100% - 3px);"></div>
+                <div class="slider-mark-label" style="left: calc(100% - 3px);">20x</div>
             </div>
         </div>
         
@@ -761,7 +792,7 @@
         
         <div class="control-group">
             <div class="switch-container">
-                <button id="envParamsBtn" class="button">环境参数</button>
+                <button id="envParamsBtn" class="button">环境与天气</button>
                 <button id="hideUIBtn" class="button">隐藏UI</button>
                 <a href="index.html" class="button">返回主页</a>
                 <a href="faq.html" class="button">常见问题</a>
@@ -842,7 +873,7 @@
     <div id="envParamsMenu" style="display: none;">
         <div id="envParamsContent">
             <button id="closeEnvParamsBtn" class="close-btn">×</button>
-            <span style="font-weight: bold; font-size: 16px; color: #333;">环境参数调整</span>
+            <span style="font-weight: bold; font-size: 16px; color: #333;">环境与天气调整</span>
             <p style="font-size: 13px; color: #666; margin-top: 5px; margin-bottom: 15px;">模拟现实可能存在的特殊天气环境情况。</p>
             
             <div class="control-group">
@@ -860,16 +891,16 @@
                 <label class="switch-label">能见度遮罩:</label>
                 <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">添加遮罩，遮挡一定距离外的物体，模拟低能见度下远处不可见的情况。</p>
                 <div style="margin-top: 10px;">
-                    <button id="visibility5km" class="button">5km</button>
-                    <button id="visibility10km" class="button">10km</button>
-                    <button id="visibility15km" class="button">15km</button>
-                    <button id="visibility20km" class="button">20km</button>
-                    <button id="visibility25km" class="button">25km</button>
+                    <button id="visibility5km" class="button visibility-option-btn">5km</button>
+                    <button id="visibility10km" class="button visibility-option-btn">10km</button>
+                    <button id="visibility15km" class="button visibility-option-btn">15km</button>
+                    <button id="visibility20km" class="button visibility-option-btn">20km</button>
+                    <button id="visibility25km" class="button visibility-option-btn">25km</button>
                 </div>
                 
                 <div style="margin-top: 10px; display: flex; align-items: center;">
                     <input type="number" id="customVisibility" placeholder="自定义能见度(km)" min="1" max="100" style="flex: 1; padding: 6px; margin-right: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                    <button id="setCustomVisibility" class="button">设置</button>
+                    <button id="setCustomVisibility" class="button visibility-option-btn">设置</button>
                     <button id="closeVisibility" class="button" style="background: #f44336; margin-left: 5px;">关闭遮罩</button>
                 </div>
             </div>

@@ -394,9 +394,9 @@ async function initializeTerrain() {
     
     terrainInitPromise = (async () => {
         try {
-            // 使用 createWorldTerrainAsync 创建地形提供者
+            // 使用 createWorldTerrainAsync 创建地形提供者，预先启用法线数据实现光照即开即关
             const terrainProvider = await Cesium.createWorldTerrainAsync({
-                requestVertexNormals: false,  // 默认不启用地形光照
+                requestVertexNormals: true,   // 预加载顶点法线，使地形光照切换 0ms 瞬间响应
                 requestWaterMask: false       // 默认不启用水体效果
             });
             viewer.terrainProvider = terrainProvider;
@@ -562,30 +562,11 @@ function updateCameraInfo() {
     }
 }
 
-// 地形光照控制 - 根据知识库内容使用正确的方法
-async function enableTerrainLighting() {
+// 地形光照控制 - 瞬时开启与关闭（已预加载法线，无需网络重新拉取，0ms即刻生效）
+function enableTerrainLighting() {
     try {
-        console.log("开始开启地形光照...");
-        
-        // 根据知识库内容，使用正确的API开启地形光照
-        const terrainProvider = await Cesium.createWorldTerrainAsync({
-            requestVertexNormals: true,  // 开启顶点法线
-            requestWaterMask: false
-        });
-        
-        viewer.terrainProvider = terrainProvider;
         viewer.scene.globe.enableLighting = true;
-        
-        console.log("地形光照已开启");
-        
-        // 更新高度基准
-        const position = viewer.scene.camera.positionWC;
-        const cartographic = Cesium.Cartographic.fromCartesian(position);
-        const terrainSample = await Cesium.sampleTerrainMostDetailed(
-            viewer.terrainProvider, 
-            [cartographic]
-        );
-        baseTerrainHeight = terrainSample[0].height;
+        console.log("地形光照已开启（即刻生效）");
         
         // 重新初始化遥杆，确保位置正确
         setTimeout(() => {
@@ -593,16 +574,19 @@ async function enableTerrainLighting() {
             if (rightJoystickInner) {
                 rightJoystickInner.style.transform = 'translate(-50%, -50%)';
             }
-        }, 100);
-        
+        }, 50);
     } catch (error) {
         console.log("开启地形光照失败:", error);
     }
 }
 
 function disableTerrainLighting() {
-    viewer.scene.globe.enableLighting = false;
-    console.log("地形光照已关闭");
+    try {
+        viewer.scene.globe.enableLighting = false;
+        console.log("地形光照已关闭（即刻生效）");
+    } catch (error) {
+        console.log("关闭地形光照失败:", error);
+    }
 }
 
 // 遥感控制函数

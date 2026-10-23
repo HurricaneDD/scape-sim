@@ -210,13 +210,41 @@
         .slider-container {
             position: relative;
             width: 100%;
-            margin: 7px 0;
+            margin: 7px 0 16px 0;
+        }
+        
+        /* 变焦滑块长条矩形指示器 - 以中心点严格对齐刻度 */
+        #zoomSlider {
+            -webkit-appearance: none;
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            outline: none;
+        }
+        
+        #zoomSlider::-webkit-slider-track {
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
+        }
+        
+        #zoomSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 6px;
+            height: 20px;
+            border-radius: 2px;
+            background: #0078d4;
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+            margin-top: -7px;
         }
         
         /* 滑块刻度 */
         .slider-ticks {
             position: absolute;
-            top: 15px;
+            top: -2px;
             left: 0;
             right: 0;
             height: 20px;
@@ -226,19 +254,21 @@
         .tick {
             position: absolute;
             top: 0;
-            width: 1px;
-            height: 6px;
-            background: #999;
+            width: 2px;
+            height: 10px;
+            background: #94a3b8;
             transform: translateX(-50%);
+            border-radius: 1px;
         }
         
         .tick-label {
             position: absolute;
-            top: 2px;
+            top: 14px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 9px;
-            color: #666;
+            font-size: 10px;
+            font-weight: 600;
+            color: #64748b;
             white-space: nowrap;
         }
         
@@ -673,10 +703,10 @@
                 <div class="slider-container">
                     <input type="range" id="zoomSlider" min="0.5" max="16" step="0.1" value="1.0" style="width: 100%; margin: 0; padding: 0;">
                     <div class="slider-ticks">
-                        <div class="tick" style="left: 3.125%"><span class="tick-label">1x</span></div>
-                        <div class="tick" style="left: 28.125%"><span class="tick-label">5x</span></div>
-                        <div class="tick" style="left: 46.875%"><span class="tick-label">8x</span></div>
-                        <div class="tick" style="left: 100%"><span class="tick-label">16x</span></div>
+                        <div class="tick" style="left: calc(3px + 0.03226 * (100% - 6px));"><span class="tick-label">1x</span></div>
+                        <div class="tick" style="left: calc(3px + 0.29032 * (100% - 6px));"><span class="tick-label">5x</span></div>
+                        <div class="tick" style="left: calc(3px + 0.48387 * (100% - 6px));"><span class="tick-label">8x</span></div>
+                        <div class="tick" style="left: calc(100% - 3px);"><span class="tick-label">16x</span></div>
                     </div>
                 </div>
             </div>

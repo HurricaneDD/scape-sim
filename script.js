@@ -42,6 +42,33 @@ const mapSelectionOverlay = document.getElementById('mapSelectionOverlay');
 const selectedLongitude = document.getElementById('selectedLongitude');
 const selectedLatitude = document.getElementById('selectedLatitude');
 const confirmSelectionBtn = document.getElementById('confirmSelectionBtn');
+const openAmapPickerBtn = document.getElementById('openAmapPickerBtn');
+
+// 高德地图坐标拾取器相关DOM与状态变量
+const amapPickerModal = document.getElementById('amapPickerModal');
+const closeAmapPickerModalBtn = document.getElementById('closeAmapPickerModalBtn');
+const amapCloseBtn = document.getElementById('amapCloseBtn');
+const amapSearchInput = document.getElementById('amapSearchInput');
+const amapSearchBtn = document.getElementById('amapSearchBtn');
+const amapPasteInput = document.getElementById('amapPasteInput');
+const amapPasteBtn = document.getElementById('amapPasteBtn');
+const amapLayerVectorBtn = document.getElementById('amapLayerVectorBtn');
+const amapLayerSatBtn = document.getElementById('amapLayerSatBtn');
+const amapDisplayGcjLng = document.getElementById('amapDisplayGcjLng');
+const amapDisplayGcjLat = document.getElementById('amapDisplayGcjLat');
+const amapDisplayWgsLng = document.getElementById('amapDisplayWgsLng');
+const amapDisplayWgsLat = document.getElementById('amapDisplayWgsLat');
+const amapCurrentLocationName = document.getElementById('amapCurrentLocationName');
+const amapConfirmFlyBtn = document.getElementById('amapConfirmFlyBtn');
+const amapPreviewBtn = document.getElementById('amapPreviewBtn');
+
+// 高德拾取器内部变量
+let amapMap = null;
+let amapMarker = null;
+let amapVectorLayer = null;
+let amapSatGroup = null;
+let amapGcjCoord = { lng: 101.8797, lat: 29.5969 }; // 默认：贡嘎雪山
+let amapWgsCoord = { lng: 101.874982, lat: 29.594732 };
 
 // 相机控制相关元素
 const controls = document.getElementById('controls');
@@ -260,6 +287,13 @@ function setupMapSelection() {
             startCameraMode(selectedPosition);
         }
     });
+
+    // 打开高德地图坐标拾取器按钮事件
+    if (openAmapPickerBtn) {
+        openAmapPickerBtn.addEventListener('click', function() {
+            openAmapPicker();
+        });
+    }
 }
 
 // 添加选择点标记 - 修复API错误
@@ -1166,6 +1200,440 @@ exitHideModeBtn.addEventListener('click', function() {
     exitHideMode();
 });
 
+// =========================================================================
+// 高德地图坐标拾取器核心逻辑（支持 GCJ-02 与 WGS-84 空间坐标系精确换算）
+// =========================================================================
+
+// 空间坐标转换算法工具类
+const CoordTransform = {
+    PI: Math.PI,
+    a: 6378245.0, // Krasovsky 1940 长半轴
+    ee: 0.00669342162296594323, // 偏心率平方
+
+    // 判断坐标是否在中国境外
+    outOfChina: function(lng, lat) {
+        return (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271);
+    },
+
+    transformLat: function(x, y) {
+        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    },
+
+    transformLng: function(x, y) {
+        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+        return ret;
+    },
+
+    // WGS-84 转 GCJ-02（正向加偏）
+    wgs84ToGcj02: function(lng, lat) {
+        if (this.outOfChina(lng, lat)) return [lng, lat];
+        let dLat = this.transformLat(lng - 105.0, lat - 35.0);
+        let dLng = this.transformLng(lng - 105.0, lat - 35.0);
+        const radLat = lat / 180.0 * Math.PI;
+        let magic = Math.sin(radLat);
+        magic = 1 - this.ee * magic * magic;
+        const sqrtMagic = Math.sqrt(magic);
+        dLat = (dLat * 180.0) / ((this.a * (1 - this.ee)) / (magic * sqrtMagic) * Math.PI);
+        dLng = (dLng * 180.0) / (this.a / sqrtMagic * Math.cos(radLat) * Math.PI);
+        return [lng + dLng, lat + dLat];
+    },
+
+    // GCJ-02 转 WGS-84（高精度4次牛顿迭代反解，误差 < 0.000001度，彻底抹平火星偏移行差）
+    gcj02ToWgs84: function(gcjLng, gcjLat) {
+        if (this.outOfChina(gcjLng, gcjLat)) return [gcjLng, gcjLat];
+        let wgsLng = gcjLng;
+        let wgsLat = gcjLat;
+        for (let i = 0; i < 4; i++) {
+            const [currGcjLng, currGcjLat] = this.wgs84ToGcj02(wgsLng, wgsLat);
+            const dLng = currGcjLng - gcjLng;
+            const dLat = currGcjLat - gcjLat;
+            wgsLng -= dLng;
+            wgsLat -= dLat;
+        }
+        return [wgsLng, wgsLat];
+    }
+};
+
+// 预设风光摄影热门机位坐标（高德 GCJ-02 坐标）
+const SCENIC_PRESETS = [
+    { name: "贡嘎雪山", gcjLng: 101.8797, gcjLat: 29.5969 },
+    { name: "牛背山", gcjLng: 102.3167, gcjLat: 29.7667 },
+    { name: "珠穆朗玛峰", gcjLng: 86.9250, gcjLat: 27.9881 },
+    { name: "梅里雪山", gcjLng: 98.6833, gcjLat: 28.4333 },
+    { name: "稻城亚丁", gcjLng: 100.3475, gcjLat: 28.3970 },
+    { name: "黄山光明顶", gcjLng: 118.1722, gcjLat: 30.1347 },
+    { name: "泰山玉皇顶", gcjLng: 117.1083, gcjLat: 36.2558 },
+    { name: "华山南峰", gcjLng: 110.0811, gcjLat: 34.4827 },
+    { name: "桂林相公山", gcjLng: 110.4578, gcjLat: 24.9389 },
+    { name: "杭州西湖", gcjLng: 120.1583, gcjLat: 30.2589 },
+    { name: "扎尕那", gcjLng: 103.1833, gcjLat: 34.1833 },
+    { name: "北京故宫", gcjLng: 116.397428, gcjLat: 39.909230 }
+];
+
+// 自定义高德地图大头针图标（使用原生CSS无依赖渲染）
+const customPhotoPin = (typeof L !== 'undefined') ? L.divIcon({
+    className: 'amap-custom-pin-marker',
+    html: `<div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+             <div style="width:22px; height:22px; background:#ef4444; border:2.5px solid #ffffff; border-radius:50%; box-shadow:0 3px 8px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold;">📷</div>
+             <div style="position:absolute; width:9px; height:9px; background:#ef4444; transform:rotate(45deg); bottom:4px; z-index:-1;"></div>
+             <div style="position:absolute; width:14px; height:5px; background:rgba(0,0,0,0.35); border-radius:50%; bottom:0; filter:blur(1px); z-index:-2;"></div>
+           </div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 32]
+}) : null;
+
+// 设置当前拾取坐标，并即时同步换算与界面更新
+function setAmapPickerLocation(gcjLng, gcjLat, locName = "自定义坐标点", shouldPan = false, zoomLevel = null) {
+    if (isNaN(gcjLng) || isNaN(gcjLat)) return;
+
+    amapGcjCoord = { lng: gcjLng, lat: gcjLat };
+    
+    // 执行 GCJ-02 ➔ WGS-84 高精度迭代转换
+    const [wgsLng, wgsLat] = CoordTransform.gcj02ToWgs84(gcjLng, gcjLat);
+    amapWgsCoord = { lng: wgsLng, lat: wgsLat };
+
+    // 更新界面数值显示
+    if (amapDisplayGcjLng) amapDisplayGcjLng.textContent = gcjLng.toFixed(6);
+    if (amapDisplayGcjLat) amapDisplayGcjLat.textContent = gcjLat.toFixed(6);
+    if (amapDisplayWgsLng) amapDisplayWgsLng.textContent = wgsLng.toFixed(6);
+    if (amapDisplayWgsLat) amapDisplayWgsLat.textContent = wgsLat.toFixed(6);
+    if (amapCurrentLocationName) amapCurrentLocationName.textContent = locName;
+
+    // 移动地图标记与视野
+    if (amapMarker) {
+        amapMarker.setLatLng([gcjLat, gcjLng]);
+    }
+
+    if (shouldPan && amapMap) {
+        const targetZoom = zoomLevel || amapMap.getZoom() || 13;
+        amapMap.setView([gcjLat, gcjLng], targetZoom);
+    }
+}
+
+// 切换高德地图图层（矢量街景 / 卫星影像）
+function switchAmapLayer(layerType) {
+    if (!amapMap) return;
+    if (layerType === 'vector') {
+        if (amapSatGroup && amapMap.hasLayer(amapSatGroup)) {
+            amapMap.removeLayer(amapSatGroup);
+        }
+        if (amapVectorLayer && !amapMap.hasLayer(amapVectorLayer)) {
+            amapVectorLayer.addTo(amapMap);
+        }
+        if (amapLayerVectorBtn) amapLayerVectorBtn.classList.add('active');
+        if (amapLayerSatBtn) amapLayerSatBtn.classList.remove('active');
+    } else {
+        if (amapVectorLayer && amapMap.hasLayer(amapVectorLayer)) {
+            amapMap.removeLayer(amapVectorLayer);
+        }
+        if (amapSatGroup && !amapMap.hasLayer(amapSatGroup)) {
+            amapSatGroup.addTo(amapMap);
+        }
+        if (amapLayerSatBtn) amapLayerSatBtn.classList.add('active');
+        if (amapLayerVectorBtn) amapLayerVectorBtn.classList.remove('active');
+    }
+}
+
+// 搜索地点（优先匹配本地风光摄影名胜词库，支持在线地理编码）
+async function searchAmapLocation(query) {
+    if (!query || !query.trim()) return;
+    query = query.trim();
+
+    // 1. 本地知名风光胜地模糊匹配
+    for (const preset of SCENIC_PRESETS) {
+        if (preset.name.includes(query) || query.includes(preset.name)) {
+            setAmapPickerLocation(preset.gcjLng, preset.gcjLat, preset.name, true, 13);
+            return;
+        }
+    }
+
+    // 2. 发起在线地理编码
+    try {
+        if (amapSearchBtn) {
+            amapSearchBtn.textContent = "搜索中...";
+            amapSearchBtn.disabled = true;
+        }
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.length > 0) {
+                const wgsLat = parseFloat(data[0].lat);
+                const wgsLng = parseFloat(data[0].lon);
+                // Nominatim 返回的是国际 WGS-84 坐标，转换为高德 GCJ-02 放置到瓦片地图上
+                const [gcjLng, gcjLat] = CoordTransform.wgs84ToGcj02(wgsLng, wgsLat);
+                const displayName = data[0].name || (data[0].display_name ? data[0].display_name.split(',')[0] : query);
+                setAmapPickerLocation(gcjLng, gcjLat, displayName, true, 13);
+                return;
+            }
+        }
+    } catch (err) {
+        console.warn("地理编码搜索异常:", err);
+    } finally {
+        if (amapSearchBtn) {
+            amapSearchBtn.textContent = "搜索";
+            amapSearchBtn.disabled = false;
+        }
+    }
+
+    if (amapCurrentLocationName) {
+        amapCurrentLocationName.textContent = `未搜索到 "${query}"，请在地图上手动点击拾取或输入经纬度`;
+    }
+}
+
+// 解析从高德官方坐标拾取器复制的经纬度文本
+function parsePastedAmapCoordinates(text) {
+    if (!text || !text.trim()) return;
+    text = text.trim();
+    // 替换中文符号
+    const cleanText = text.replace(/，/g, ',').replace(/；/g, ';').replace(/;/g, ',');
+    const matches = cleanText.match(/[-+]?[0-9]*\.?[0-9]+/g);
+    
+    if (!matches || matches.length < 2) {
+        if (amapPasteInput) amapPasteInput.style.borderColor = '#ef4444';
+        if (amapCurrentLocationName) amapCurrentLocationName.textContent = '❌ 坐标格式有误，请输入如: 116.397428, 39.909230';
+        return;
+    }
+
+    const val1 = parseFloat(matches[0]);
+    const val2 = parseFloat(matches[1]);
+    let lng, lat;
+
+    // 智能识别经度和纬度前后次序（中国经度通常在 70~140，纬度在 0~60）
+    if (val1 >= 60 && val1 <= 150 && val2 >= 0 && val2 <= 65) {
+        lng = val1;
+        lat = val2;
+    } else if (val2 >= 60 && val2 <= 150 && val1 >= 0 && val1 <= 65) {
+        lng = val2;
+        lat = val1;
+    } else {
+        lng = val1;
+        lat = val2;
+    }
+
+    if (amapPasteInput) amapPasteInput.style.borderColor = '#cbd5e1';
+    setAmapPickerLocation(lng, lat, "粘贴高德坐标点", true, 14);
+}
+
+// 将高德地图拾取的坐标传递给 Cesium 并执行飞入或预览
+function flyFromAmapToCesium(startDirectly = true) {
+    if (!amapWgsCoord || isNaN(amapWgsCoord.lng) || isNaN(amapWgsCoord.lat)) {
+        return;
+    }
+
+    const wgsLng = amapWgsCoord.lng;
+    const wgsLat = amapWgsCoord.lat;
+
+    console.log(`[高德拾取器] 传递至 Cesium: WGS-84 经度 ${wgsLng.toFixed(6)}°, 纬度 ${wgsLat.toFixed(6)}° (高德原始 GCJ-02: ${amapGcjCoord.lng.toFixed(6)}°, ${amapGcjCoord.lat.toFixed(6)}°)`);
+
+    // 关闭高德拾取器窗口
+    closeAmapPicker();
+
+    // 计算三维世界坐标与地表高度
+    const cartographic = Cesium.Cartographic.fromDegrees(wgsLng, wgsLat);
+    const globeHeight = viewer.scene.globe.getHeight(cartographic);
+    const estimatedHeight = (typeof globeHeight === 'number' && !isNaN(globeHeight)) ? globeHeight : 0;
+    const position = Cesium.Cartesian3.fromDegrees(wgsLng, wgsLat, estimatedHeight);
+
+    // 同步更新选点状态与界面信息
+    selectedPosition = position;
+    preloadedTerrainHeight = estimatedHeight;
+    selectedLongitude.textContent = wgsLng.toFixed(6) + '°';
+    selectedLatitude.textContent = wgsLat.toFixed(6) + '°';
+    confirmSelectionBtn.disabled = false;
+
+    // 添加选择点屏幕标记
+    addSelectionMarker(position);
+
+    // 后台并行预采样最高精度地表高程
+    const currentSelectionId = ++selectionCounter;
+    preloadedTerrainPromise = (async () => {
+        try {
+            await initializeTerrain();
+            if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+                const terrainSample = await Cesium.sampleTerrainMostDetailed(
+                    viewer.terrainProvider, 
+                    [cartographic]
+                );
+                if (currentSelectionId === selectionCounter && terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
+                    preloadedTerrainHeight = terrainSample[0].height;
+                    return terrainSample[0].height;
+                }
+            }
+        } catch (e) {
+            console.log("后台预采样高精度地形高度失败:", e);
+        }
+        return estimatedHeight;
+    })();
+
+    if (startDirectly) {
+        // 直接飞入并无缝进入相机模拟模式
+        startCameraMode(position);
+    } else {
+        // 在三维地球上以俯视预览该位置（距地表 5000 米）
+        const previewHeight = Math.max(estimatedHeight + 5000, 3000);
+        viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(wgsLng, wgsLat, previewHeight),
+            orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch: Cesium.Math.toRadians(-60),
+                roll: 0.0
+            },
+            duration: 2.0,
+            easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
+            complete: function() {
+                console.log("已定位到该机位俯视预览视角");
+            }
+        });
+    }
+}
+
+// 初始化高德地图坐标拾取器
+function initAmapPicker() {
+    if (typeof L === 'undefined') {
+        console.warn("Leaflet 库尚在加载中，200ms 后自动重试初始化高德坐标拾取器...");
+        setTimeout(initAmapPicker, 200);
+        return;
+    }
+
+    if (amapMap) return;
+
+    const mapContainer = document.getElementById('amapLeafletMap');
+    if (!mapContainer) return;
+
+    // 创建 Leaflet 实例，默认定位到贡嘎雪山
+    amapMap = L.map('amapLeafletMap', {
+        center: [amapGcjCoord.lat, amapGcjCoord.lng],
+        zoom: 12,
+        zoomControl: true,
+        attributionControl: false
+    });
+
+    // 创建高德街道矢量图层 (style=7)
+    amapVectorLayer = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+        subdomains: ['1','2','3','4'],
+        maxZoom: 18
+    }).addTo(amapMap);
+
+    // 创建高德卫星影像与路网标注图层 (style=6 + style=8)
+    const satTile = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}', {
+        subdomains: ['1','2','3','4'],
+        maxZoom: 18
+    });
+    const roadTile = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1','2','3','4'],
+        maxZoom: 18
+    });
+    amapSatGroup = L.layerGroup([satTile, roadTile]);
+
+    // 创建可拖拽标记
+    amapMarker = L.marker([amapGcjCoord.lat, amapGcjCoord.lng], {
+        icon: customPhotoPin || undefined,
+        draggable: true
+    }).addTo(amapMap);
+
+    // 监听大头针拖拽结束事件
+    amapMarker.on('dragend', function() {
+        const pos = amapMarker.getLatLng();
+        setAmapPickerLocation(pos.lng, pos.lat, "手动拖拽选点");
+    });
+
+    // 监听地图点击事件
+    amapMap.on('click', function(e) {
+        setAmapPickerLocation(e.latlng.lng, e.latlng.lat, "地图点击拾取点");
+    });
+
+    // 绑定矢量/卫星图层切换按钮
+    if (amapLayerVectorBtn) {
+        amapLayerVectorBtn.addEventListener('click', () => switchAmapLayer('vector'));
+    }
+    if (amapLayerSatBtn) {
+        amapLayerSatBtn.addEventListener('click', () => switchAmapLayer('satellite'));
+    }
+
+    // 绑定热门风光预设标签点击事件
+    document.querySelectorAll('.amap-preset-tag').forEach(tag => {
+        tag.addEventListener('click', function() {
+            const lng = parseFloat(this.getAttribute('data-lng'));
+            const lat = parseFloat(this.getAttribute('data-lat'));
+            const name = this.getAttribute('data-name');
+            if (!isNaN(lng) && !isNaN(lat)) {
+                setAmapPickerLocation(lng, lat, name, true, 13);
+            }
+        });
+    });
+
+    // 绑定地点搜索按钮与回车键
+    if (amapSearchBtn && amapSearchInput) {
+        amapSearchBtn.addEventListener('click', () => searchAmapLocation(amapSearchInput.value));
+        amapSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') searchAmapLocation(amapSearchInput.value);
+        });
+    }
+
+    // 绑定坐标粘贴定位按钮与回车键
+    if (amapPasteBtn && amapPasteInput) {
+        amapPasteBtn.addEventListener('click', () => parsePastedAmapCoordinates(amapPasteInput.value));
+        amapPasteInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') parsePastedAmapCoordinates(amapPasteInput.value);
+        });
+    }
+
+    // 绑定关闭弹窗按钮
+    if (closeAmapPickerModalBtn) {
+        closeAmapPickerModalBtn.addEventListener('click', closeAmapPicker);
+    }
+    if (amapCloseBtn) {
+        amapCloseBtn.addEventListener('click', closeAmapPicker);
+    }
+
+    // 绑定确认选择并飞入Cesium模拟画面
+    if (amapConfirmFlyBtn) {
+        amapConfirmFlyBtn.addEventListener('click', function() {
+            flyFromAmapToCesium(true);
+        });
+    }
+
+    // 绑定在三维地球上预览此点
+    if (amapPreviewBtn) {
+        amapPreviewBtn.addEventListener('click', function() {
+            flyFromAmapToCesium(false);
+        });
+    }
+
+    // 初始化一次当前选点数据
+    setAmapPickerLocation(amapGcjCoord.lng, amapGcjCoord.lat, "贡嘎雪山（默认）");
+}
+
+// 打开高德坐标拾取器弹窗
+function openAmapPicker() {
+    if (!amapPickerModal) return;
+    amapPickerModal.style.display = 'flex';
+    if (!amapMap) {
+        initAmapPicker();
+    }
+    setTimeout(() => {
+        if (amapMap) {
+            amapMap.invalidateSize();
+            amapMap.setView([amapGcjCoord.lat, amapGcjCoord.lng], amapMap.getZoom() || 12);
+        }
+    }, 120);
+}
+
+// 关闭高德坐标拾取器弹窗
+function closeAmapPicker() {
+    if (!amapPickerModal) return;
+    amapPickerModal.style.display = 'none';
+}
+
 // 主初始化函数
 function main() {
     console.log("开始初始化...");
@@ -1175,6 +1643,12 @@ function main() {
     
     // 提前在后台预加载3D地形，避免选点进入相机模式时因发起网络请求而产生数秒的原地卡顿
     initializeTerrain();
+
+    // 初始化高德地图坐标拾取器并在进入初始页面时优先弹出
+    initAmapPicker();
+    setTimeout(() => {
+        openAmapPicker();
+    }, 250);
 }
 
 // 启动主程序

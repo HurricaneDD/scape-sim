@@ -68,8 +68,8 @@ let amapMap = null;
 let amapMarker = null;
 let amapVectorLayer = null;
 let amapSatGroup = null;
-let amapGcjCoord = { lng: 101.8797, lat: 29.5969 }; // 默认：贡嘎雪山
-let amapWgsCoord = { lng: 101.874982, lat: 29.594732 };
+let amapGcjCoord = { lng: 105.0, lat: 36.0 }; // 默认：全中国中心视角
+let amapWgsCoord = { lng: 105.0, lat: 36.0 };
 
 // 相机控制相关元素
 const controls = document.getElementById('controls');
@@ -1510,10 +1510,10 @@ function initAmapPicker() {
     const mapContainer = document.getElementById('amapLeafletMap');
     if (!mapContainer) return;
 
-    // 创建 Leaflet 实例，默认定位到贡嘎雪山
+    // 创建 Leaflet 实例，默认视角为全中国
     amapMap = L.map('amapLeafletMap', {
         center: [amapGcjCoord.lat, amapGcjCoord.lng],
-        zoom: 12,
+        zoom: 4,
         zoomControl: true,
         attributionControl: false
     });
@@ -1619,7 +1619,7 @@ function initAmapPicker() {
     }
 
     // 初始化一次当前选点数据
-    setAmapPickerLocation(amapGcjCoord.lng, amapGcjCoord.lat, "贡嘎雪山（默认）");
+    setAmapPickerLocation(amapGcjCoord.lng, amapGcjCoord.lat, "请点击地图或搜索选点");
 }
 
 // 打开高德坐标拾取器弹窗
@@ -1632,7 +1632,7 @@ function openAmapPicker() {
     setTimeout(() => {
         if (amapMap) {
             amapMap.invalidateSize();
-            amapMap.setView([amapGcjCoord.lat, amapGcjCoord.lng], amapMap.getZoom() || 12);
+            amapMap.setView([amapGcjCoord.lat, amapGcjCoord.lng], amapMap.getZoom() || 4);
         }
     }, 120);
 }

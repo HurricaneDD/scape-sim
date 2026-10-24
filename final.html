@@ -1204,7 +1204,6 @@
                 <div class="amap-header-title">
                     <span style="font-size: 20px;">📍</span>
                     <h3>高德地图坐标拾取器</h3>
-                    <span class="amap-header-badge">GCJ-02 ➔ WGS-84 坐标自动精确转换</span>
                 </div>
                 <button id="closeAmapPickerModalBtn" class="amap-close-btn" title="关闭拾取器">×</button>
             </div>
@@ -1264,28 +1263,23 @@
                     <div class="amap-coord-card">
                         <div class="amap-coord-card-header">
                             <span class="amap-coord-title">📍 高德原始拾取坐标</span>
-                            <span class="amap-coord-tag">GCJ-02 火星坐标系</span>
                         </div>
                         <div class="amap-coord-values">
-                            <span>经度: <strong id="amapDisplayGcjLng">101.879700</strong>°</span>
-                            <span>纬度: <strong id="amapDisplayGcjLat">29.596900</strong>°</span>
+                            <span>经度: <strong id="amapDisplayGcjLng">105.000000</strong>°</span>
+                            <span>纬度: <strong id="amapDisplayGcjLat">36.000000</strong>°</span>
                         </div>
                         <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
-                            地点: <span id="amapCurrentLocationName">贡嘎雪山（默认）</span>
+                            地点: <span id="amapCurrentLocationName">请点击地图或搜索选点</span>
                         </div>
                     </div>
 
                     <div class="amap-coord-card highlight">
                         <div class="amap-coord-card-header">
                             <span class="amap-coord-title">🌐 实景三维地球坐标</span>
-                            <span class="amap-coord-tag">WGS-84 国际大地基准</span>
                         </div>
                         <div class="amap-coord-values">
-                            <span>经度: <strong id="amapDisplayWgsLng" style="color: #047857;">101.874982</strong>°</span>
-                            <span>纬度: <strong id="amapDisplayWgsLat" style="color: #047857;">29.594732</strong>°</span>
-                        </div>
-                        <div class="amap-coord-note">
-                            ✓ 已自动进行高精度迭代反解，消除火星偏移行差，保证在 Cesium 中 100% 精确对齐地貌
+                            <span>经度: <strong id="amapDisplayWgsLng" style="color: #047857;">105.000000</strong>°</span>
+                            <span>纬度: <strong id="amapDisplayWgsLat" style="color: #047857;">36.000000</strong>°</span>
                         </div>
                     </div>
                 </div>

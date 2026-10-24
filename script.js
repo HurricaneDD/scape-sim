@@ -61,6 +61,7 @@ const amapDisplayWgsLat = document.getElementById('amapDisplayWgsLat');
 const amapCurrentLocationName = document.getElementById('amapCurrentLocationName');
 const amapConfirmFlyBtn = document.getElementById('amapConfirmFlyBtn');
 const amapPreviewBtn = document.getElementById('amapPreviewBtn');
+const openAmapPickerFromControlsBtn = document.getElementById('openAmapPickerFromControlsBtn');
 
 // 高德拾取器内部变量
 let amapMap = null;
@@ -1607,6 +1608,14 @@ function initAmapPicker() {
         amapPreviewBtn.addEventListener('click', function() {
             flyFromAmapToCesium(false);
         });
+    }
+
+    // 绑定选点浮窗与相机控制栏中的高德地图拾取器触发按钮
+    if (openAmapPickerBtn) {
+        openAmapPickerBtn.addEventListener('click', openAmapPicker);
+    }
+    if (openAmapPickerFromControlsBtn) {
+        openAmapPickerFromControlsBtn.addEventListener('click', openAmapPicker);
     }
 
     // 初始化一次当前选点数据

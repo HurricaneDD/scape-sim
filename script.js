@@ -48,9 +48,13 @@ const openAmapPickerBtn = document.getElementById('openAmapPickerBtn');
 const amapPickerModal = document.getElementById('amapPickerModal');
 const closeAmapPickerModalBtn = document.getElementById('closeAmapPickerModalBtn');
 const amapCloseBtn = document.getElementById('amapCloseBtn');
+const amapSearchWrapper = document.getElementById('amapSearchWrapper');
 const amapSearchInput = document.getElementById('amapSearchInput');
 const amapSearchBtn = document.getElementById('amapSearchBtn');
-const amapPasteInput = document.getElementById('amapPasteInput');
+const amapSearchSuggestions = document.getElementById('amapSearchSuggestions');
+const amapLngInput = document.getElementById('amapLngInput');
+const amapLatInput = document.getElementById('amapLatInput');
+const amapCoordInputGroup = document.getElementById('amapCoordInputGroup');
 const amapPasteBtn = document.getElementById('amapPasteBtn');
 const amapLayerVectorBtn = document.getElementById('amapLayerVectorBtn');
 const amapLayerSatBtn = document.getElementById('amapLayerSatBtn');
@@ -68,8 +72,8 @@ let amapMap = null;
 let amapMarker = null;
 let amapVectorLayer = null;
 let amapSatGroup = null;
-let amapGcjCoord = { lng: 105.0, lat: 36.0 }; // 默认：全中国中心视角
-let amapWgsCoord = { lng: 105.0, lat: 36.0 };
+let amapGcjCoord = null; // 初始未选点，不显示红标
+let amapWgsCoord = null;
 
 // 相机控制相关元素
 const controls = document.getElementById('controls');
@@ -97,19 +101,20 @@ const envParamsBtn = document.getElementById('envParamsBtn');
 const envParamsMenu = document.getElementById('envParamsMenu');
 const closeEnvParamsBtn = document.getElementById('closeEnvParamsBtn');
 
-// 能见度遮罩相关元素
-const visibility5km = document.getElementById('visibility5km');
-const visibility10km = document.getElementById('visibility10km');
-const visibility15km = document.getElementById('visibility15km');
-const visibility20km = document.getElementById('visibility20km');
-const visibility25km = document.getElementById('visibility25km');
-const customVisibility = document.getElementById('customVisibility');
-const setCustomVisibility = document.getElementById('setCustomVisibility');
-const closeVisibility = document.getElementById('closeVisibility');
+// 距离雾相关元素
+const fog5km = document.getElementById('fog5km');
+const fog10km = document.getElementById('fog10km');
+const fog15km = document.getElementById('fog15km');
+const fog20km = document.getElementById('fog20km');
+const fog25km = document.getElementById('fog25km');
+const fog30km = document.getElementById('fog30km');
+const customFogVisibility = document.getElementById('customFogVisibility');
+const setCustomFogVisibility = document.getElementById('setCustomFogVisibility');
+const closeFogVisibility = document.getElementById('closeFogVisibility');
 
-// 能见度遮罩圆柱体实体与图元对象
-let visibilityCylinder = null;
-let visibilityPrimitive = null; // 同步零延迟渲染 Primitive
+// 距离雾后期处理阶段与状态
+let distanceFogStage = null;
+let currentFogVisibilityMeters = 10000.0;
 
 // 时间控制元素
 const currentTimeDisplay = document.getElementById('currentTime');
@@ -635,76 +640,18 @@ function disableTerrainLighting() {
     }
 }
 
-// 计算圆上的点
-function computeCirclePoints(centerCartographic, radiusMeters, segments = 96) {
-    const ellipsoid = Cesium.Ellipsoid.WGS84;
-    const points = [];
-    const a = ellipsoid.maximumRadius;
-    const lat = centerCartographic.latitude;
-    const centerLon = centerCartographic.longitude;
-    const centerLat = centerCartographic.latitude;
-    
-    for (let i = 0; i <= segments; i++) {
-        const angle = (i / segments) * Math.PI * 2;
-        const dx = Math.cos(angle);
-        const dy = Math.sin(angle);
-        const dLon = dx * radiusMeters / (a * Math.cos(lat));
-        const dLat = dy * radiusMeters / a;
-        const newLon = centerLon + dLon;
-        const newLat = centerLat + dLat;
-        const carto = new Cesium.Cartographic(newLon, newLat, 0);
-        points.push(Cesium.Cartographic.toCartesian(carto));
-    }
-    return points;
-}
-
-// 清除场景中所有存在的能见度遮罩（彻底杜绝残留与叠层）
-function clearAllVisibilityEntities() {
-    // 1. 清理同步 Primitive 图元
-    if (visibilityPrimitive) {
-        viewer.scene.primitives.remove(visibilityPrimitive);
-        visibilityPrimitive = null;
-    }
-    const primitives = viewer.scene.primitives;
-    for (let i = primitives.length - 1; i >= 0; i--) {
-        const p = primitives.get(i);
-        if (p && p._isVisibilityWall) {
-            primitives.remove(p);
-        }
-    }
-    // 2. 清理实体（兼容与历史残留）
-    if (visibilityCylinder) {
-        viewer.entities.remove(visibilityCylinder);
-        visibilityCylinder = null;
-    }
-    const byId = viewer.entities.getById('visibility-wall-cylinder');
-    if (byId) {
-        viewer.entities.remove(byId);
-    }
-    const allEntities = viewer.entities.values;
-    const toRemove = [];
-    for (let i = 0; i < allEntities.length; i++) {
-        const ent = allEntities[i];
-        if (ent && (ent.name === 'Visibility Wall' || ent.id === 'visibility-wall-cylinder')) {
-            toRemove.push(ent);
-        }
-    }
-    for (let i = 0; i < toRemove.length; i++) {
-        viewer.entities.remove(toRemove[i]);
-    }
-}
-
-// 更新能见度按钮的高亮状态
-function updateVisibilityBtnState(activeBtn) {
-    const visibilityBtns = [
-        visibility5km, 
-        visibility10km, 
-        visibility15km, 
-        visibility20km, 
-        visibility25km, 
-        setCustomVisibility
+// 更新距离雾按钮的高亮状态
+function updateFogBtnState(activeBtn) {
+    const fogBtns = [
+        fog5km,
+        fog10km,
+        fog15km,
+        fog20km,
+        fog25km,
+        fog30km,
+        setCustomFogVisibility
     ];
-    visibilityBtns.forEach(btn => {
+    fogBtns.forEach(btn => {
         if (btn) {
             btn.classList.remove('active');
         }
@@ -714,90 +661,93 @@ function updateVisibilityBtnState(activeBtn) {
     }
 }
 
-// 创建能见度遮罩圆筒墙（同步极速创建，0ms即刻生效）
-function createVisibilityCylinder(radiusKm, targetBtn = null) {
-    // 彻底清除所有已存在的能见度遮罩
-    clearAllVisibilityEntities();
-    
-    // 切换按钮高亮显示
-    updateVisibilityBtnState(targetBtn);
-    
-    const radiusMeters = radiusKm * 1000;
-    const wallHeight = 50000; // 高度50km
-    
-    // 获取当前相机位置
-    const cameraPosition = viewer.scene.camera.positionWC;
-    const cameraCartographic = Cesium.Cartographic.fromCartesian(cameraPosition);
-    
-    // 计算圆上的点（72分段圆弧平滑且计算仅需0.1ms）
-    const basePoints = computeCirclePoints(cameraCartographic, radiusMeters, 72);
-    
-    // 获取当前地形基准高度（使用即时基准，无需网络请求）
-    const currentGlobeHeight = viewer.scene.globe.getHeight(cameraCartographic);
-    const terrainHeight = (typeof currentGlobeHeight === 'number' && !isNaN(currentGlobeHeight))
-        ? currentGlobeHeight
-        : (baseTerrainHeight || 0);
-    
-    // 墙的底部高度（地面以下5000米，确保覆盖谷底）
-    const minHeight = terrainHeight - 5000;
-    // 墙的顶部高度（地面以上50km）
-    const maxHeight = terrainHeight + wallHeight;
-    
-    // 构建墙的位置和高度数组
-    const wallPositions = [];
-    const minimumHeights = [];
-    const maximumHeights = [];
-    
-    for (let i = 0; i < basePoints.length; i++) {
-        const carto = Cesium.Cartographic.fromCartesian(basePoints[i]);
-        wallPositions.push(carto.longitude, carto.latitude);
-        minimumHeights.push(minHeight);
-        maximumHeights.push(maxHeight);
+// 初始化或获取距离雾 PostProcessStage（基于相机视空间真实深度计算渐进大气雾化）
+function ensureDistanceFogStage() {
+    if (distanceFogStage) {
+        return distanceFogStage;
     }
-    
-    // 使用 Primitive + asynchronous: false 实现主线程 0ms 同步构建 WebGL 缓冲区，
-    // 彻底绕过 Entity API 内部的 Web Worker 异步排队延迟，下一帧（16ms内）瞬间绘制！
-    const wallInstance = new Cesium.GeometryInstance({
-        geometry: new Cesium.WallGeometry({
-            positions: Cesium.Cartesian3.fromRadiansArray(wallPositions),
-            minimumHeights: minimumHeights,
-            maximumHeights: maximumHeights
-        }),
-        attributes: {
-            color: Cesium.ColorGeometryInstanceAttribute.fromColor(
-                Cesium.Color.WHITE.withAlpha(0.75)
-            )
-        },
-        id: 'visibility-wall-cylinder'
-    });
-    
-    visibilityPrimitive = new Cesium.Primitive({
-        geometryInstances: wallInstance,
-        appearance: new Cesium.PerInstanceColorAppearance({
-            translucent: true,
-            closed: false,
-            renderState: {
-                cull: {
-                    enabled: false // 禁用背面剔除，无论在圆筒内外视角均可见白雾遮罩
-                }
+
+    const fragmentShaderSource = `
+        uniform sampler2D colorTexture;
+        uniform sampler2D depthTexture;
+        in vec2 v_textureCoordinates;
+        uniform float u_visibilityDistance;
+        uniform vec4 u_fogColor;
+
+        void main() {
+            vec4 origColor = texture(colorTexture, v_textureCoordinates);
+            float depth = czm_unpackDepth(texture(depthTexture, v_textureCoordinates));
+
+            // 天空无穷远区域柔和混入雾色，消除远山轮廓与天空的硬边割裂
+            if (depth == 0.0 || depth >= 0.999999) {
+                out_FragColor = mix(origColor, vec4(u_fogColor.rgb, origColor.a), 0.78);
+                return;
             }
-        }),
-        asynchronous: false // 同步执行，0ms免排队
+
+            vec4 eyeCoordinate = czm_windowToEyeCoordinates(gl_FragCoord.xy, depth);
+            vec3 posEC = eyeCoordinate.xyz / eyeCoordinate.w;
+            float dist = length(posEC);
+
+            // 归一化距离：当 dist == u_visibilityDistance 时达到设定能见度极限
+            float normDist = clamp(dist / max(u_visibilityDistance, 1.0), 0.0, 2.0);
+
+            // 结合大气指数消光定律 (Beer-Lambert) 与平滑 Hermite 插值
+            // 近景保持清晰通透，中景呈现自然空气透视感，到达能见度距离处隐入浓雾
+            float expFog = 1.0 - exp(-pow(normDist * 1.65, 1.45));
+            float smoothFog = smoothstep(0.02, 1.0, normDist);
+            float fogFactor = clamp(mix(expFog, smoothFog, 0.35), 0.0, 0.96);
+
+            out_FragColor = mix(origColor, vec4(u_fogColor.rgb, origColor.a), fogFactor);
+        }
+    `;
+
+    distanceFogStage = new Cesium.PostProcessStage({
+        name: 'scape_sim_distance_fog',
+        fragmentShader: fragmentShaderSource,
+        uniforms: {
+            u_visibilityDistance: function() {
+                return currentFogVisibilityMeters;
+            },
+            u_fogColor: function() {
+                return new Cesium.Color(0.88, 0.90, 0.93, 1.0);
+            }
+        }
     });
-    visibilityPrimitive._isVisibilityWall = true;
-    viewer.scene.primitives.add(visibilityPrimitive);
-    
-    console.log(`已创建能见度遮罩（0ms瞬间生效），半径: ${radiusKm}km，高度: ${wallHeight/1000}km`);
+
+    distanceFogStage.enabled = false;
+    viewer.scene.postProcessStages.add(distanceFogStage);
+    return distanceFogStage;
 }
 
-// 关闭能见度遮罩
-function closeVisibilityMask() {
-    clearAllVisibilityEntities();
-    updateVisibilityBtnState(null);
-    if (customVisibility) {
-        customVisibility.value = '';
+// 开启或切换距离雾能见度挡位（5km / 10km / 15km / 20km / 25km / 自定义）
+function applyDistanceFog(visibilityKm, targetBtn = null) {
+    if (!viewer || !viewer.scene) return;
+
+    currentFogVisibilityMeters = Math.max(0.1, visibilityKm) * 1000.0;
+    const stage = ensureDistanceFogStage();
+    stage.enabled = true;
+
+    // 同步开启 Cesium 内置地形雾辅助过渡
+    viewer.scene.fog.enabled = true;
+    viewer.scene.fog.density = Math.min(0.002, 3.0 / currentFogVisibilityMeters);
+
+    updateFogBtnState(targetBtn);
+    console.log(`已开启距离雾，当前能见度挡位: ${visibilityKm}km`);
+}
+
+// 关闭距离雾
+function closeDistanceFog() {
+    if (distanceFogStage) {
+        distanceFogStage.enabled = false;
     }
-    console.log("能见度遮罩已关闭");
+    if (viewer && viewer.scene && viewer.scene.fog) {
+        viewer.scene.fog.density = 0.0002;
+    }
+    updateFogBtnState(null);
+    if (customFogVisibility) {
+        customFogVisibility.value = '';
+    }
+    console.log("距离雾已关闭");
 }
 
 // 遥感控制函数
@@ -1116,43 +1066,54 @@ function initializeCameraControls() {
         envParamsMenu.style.display = 'none';
     });
     
-    // 能见度遮罩按钮事件监听（传入被点击的按钮对象用于高亮）
-    visibility5km.addEventListener('click', function() {
-        createVisibilityCylinder(5, this);
-    });
-    
-    visibility10km.addEventListener('click', function() {
-        createVisibilityCylinder(10, this);
-    });
-    
-    visibility15km.addEventListener('click', function() {
-        createVisibilityCylinder(15, this);
-    });
-    
-    visibility20km.addEventListener('click', function() {
-        createVisibilityCylinder(20, this);
-    });
-    
-    visibility25km.addEventListener('click', function() {
-        createVisibilityCylinder(25, this);
-    });
-    
-    // 自定义能见度设置按钮事件监听
-    setCustomVisibility.addEventListener('click', function() {
-        const radiusKm = parseFloat(customVisibility.value);
-        if (!isNaN(radiusKm) && radiusKm > 0) {
-            customVisibility.style.borderColor = '#ddd';
-            createVisibilityCylinder(radiusKm, this);
-        } else {
-            customVisibility.style.borderColor = '#f44336';
-            customVisibility.focus();
-        }
-    });
-    
-    // 关闭能见度遮罩按钮事件监听
-    closeVisibility.addEventListener('click', function() {
-        closeVisibilityMask();
-    });
+    // 距离雾各能见度挡位按钮事件监听（5km / 10km / 15km / 20km / 25km / 30km）
+    if (fog5km) {
+        fog5km.addEventListener('click', function() {
+            applyDistanceFog(5, this);
+        });
+    }
+    if (fog10km) {
+        fog10km.addEventListener('click', function() {
+            applyDistanceFog(10, this);
+        });
+    }
+    if (fog15km) {
+        fog15km.addEventListener('click', function() {
+            applyDistanceFog(15, this);
+        });
+    }
+    if (fog20km) {
+        fog20km.addEventListener('click', function() {
+            applyDistanceFog(20, this);
+        });
+    }
+    if (fog25km) {
+        fog25km.addEventListener('click', function() {
+            applyDistanceFog(25, this);
+        });
+    }
+    if (fog30km) {
+        fog30km.addEventListener('click', function() {
+            applyDistanceFog(30, this);
+        });
+    }
+    if (setCustomFogVisibility) {
+        setCustomFogVisibility.addEventListener('click', function() {
+            const radiusKm = parseFloat(customFogVisibility.value);
+            if (!isNaN(radiusKm) && radiusKm > 0) {
+                customFogVisibility.style.borderColor = '#ddd';
+                applyDistanceFog(radiusKm, this);
+            } else {
+                customFogVisibility.style.borderColor = '#f44336';
+                customFogVisibility.focus();
+            }
+        });
+    }
+    if (closeFogVisibility) {
+        closeFogVisibility.addEventListener('click', function() {
+            closeDistanceFog();
+        });
+    }
     
     // 镜头回正按钮事件监听
     resetCameraBtn.addEventListener('click', function() {
@@ -1262,21 +1223,45 @@ const CoordTransform = {
     }
 };
 
-// 预设风光摄影热门机位坐标（高德 GCJ-02 坐标）
+// 预设风光摄影热门机位及扩展景区词库（高德 GCJ-02 坐标 + 详细地址）
 const SCENIC_PRESETS = [
-    { name: "贡嘎雪山", gcjLng: 101.8797, gcjLat: 29.5969 },
-    { name: "牛背山", gcjLng: 102.3167, gcjLat: 29.7667 },
-    { name: "珠穆朗玛峰", gcjLng: 86.9250, gcjLat: 27.9881 },
-    { name: "梅里雪山", gcjLng: 98.6833, gcjLat: 28.4333 },
-    { name: "稻城亚丁", gcjLng: 100.3475, gcjLat: 28.3970 },
-    { name: "黄山光明顶", gcjLng: 118.1722, gcjLat: 30.1347 },
-    { name: "泰山玉皇顶", gcjLng: 117.1083, gcjLat: 36.2558 },
-    { name: "华山南峰", gcjLng: 110.0811, gcjLat: 34.4827 },
-    { name: "桂林相公山", gcjLng: 110.4578, gcjLat: 24.9389 },
-    { name: "杭州西湖", gcjLng: 120.1583, gcjLat: 30.2589 },
-    { name: "扎尕那", gcjLng: 103.1833, gcjLat: 34.1833 },
-    { name: "北京故宫", gcjLng: 116.397428, gcjLat: 39.909230 }
+    { name: "贡嘎雪山", address: "四川省甘孜藏族自治州康定市 · 贡嘎山国家级风景名胜区", gcjLng: 101.8797, gcjLat: 29.5969 },
+    { name: "贡嘎山冷噶措观景台", address: "四川省甘孜藏族自治州康定市贡嘎山乡帮木吉德村", gcjLng: 101.7665, gcjLat: 29.5286 },
+    { name: "贡嘎山子梅垭口", address: "四川省甘孜藏族自治州康定市贡嘎山乡子梅垭口", gcjLng: 101.7631, gcjLat: 29.6228 },
+    { name: "牛背山", address: "四川省雅安市荥经县牛背山镇 · 360度云海雪山观景平台", gcjLng: 102.3167, gcjLat: 29.7667 },
+    { name: "珠穆朗玛峰", address: "西藏自治区日喀则市定日县 · 珠穆朗玛峰国家级自然保护区", gcjLng: 86.9250, gcjLat: 27.9881 },
+    { name: "珠峰大本营 (绒布寺)", address: "西藏自治区日喀则市定日县曲当乡珠峰大本营观景台", gcjLng: 86.8522, gcjLat: 28.1436 },
+    { name: "加乌拉山口 (珠峰观景台)", address: "西藏自治区日喀则市定日县扎西宗乡加乌拉山口", gcjLng: 87.0531, gcjLat: 28.2953 },
+    { name: "梅里雪山", address: "云南省迪庆藏族自治州德钦县 · 卡瓦格博峰景区", gcjLng: 98.6833, gcjLat: 28.4333 },
+    { name: "梅里雪山飞来寺观景台", address: "云南省迪庆藏族自治州德钦县升平镇飞来寺国家森林公园", gcjLng: 98.8781, gcjLat: 28.4525 },
+    { name: "稻城亚丁", address: "四川省甘孜藏族自治州稻城县香格里拉镇 · 亚丁国家级自然保护区", gcjLng: 100.3475, gcjLat: 28.3970 },
+    { name: "黄山光明顶", address: "安徽省黄山市黄山区汤口镇 · 黄山风景区光明顶气象站", gcjLng: 118.1722, gcjLat: 30.1347 },
+    { name: "黄山迎客松 (玉屏楼)", address: "安徽省黄山市黄山区黄山风景区玉屏景区", gcjLng: 118.1738, gcjLat: 30.1281 },
+    { name: "黄山始信峰", address: "安徽省黄山市黄山区黄山风景区北海景区始信峰", gcjLng: 118.1831, gcjLat: 30.1422 },
+    { name: "泰山玉皇顶", address: "山东省泰安市泰山区红门路 · 泰山风景名胜区极顶", gcjLng: 117.1083, gcjLat: 36.2558 },
+    { name: "华山南峰", address: "陕西省渭南市华阴市玉泉路 · 华山风景名胜区落雁峰", gcjLng: 110.0811, gcjLat: 34.4827 },
+    { name: "桂林相公山", address: "广西壮族自治区桂林市阳朔县兴坪镇 · 漓江第一湾摄影点", gcjLng: 110.4578, gcjLat: 24.9389 },
+    { name: "杭州西湖", address: "浙江省杭州市西湖区 · 西湖风景名胜区断桥残雪/宝石山", gcjLng: 120.1583, gcjLat: 30.2589 },
+    { name: "扎尕那", address: "甘肃省甘南藏族自治州迭部县益哇镇 · 扎尕那达日观景台", gcjLng: 103.1833, gcjLat: 34.1833 },
+    { name: "北京故宫", address: "北京市东城区景山前街4号 · 故宫博物院 / 景山万春亭", gcjLng: 116.397428, gcjLat: 39.909230 },
+    { name: "四姑娘山幺妹峰", address: "四川省阿坝藏族羌族自治州小金县四姑娘山镇 · 猫鼻梁观景台", gcjLng: 102.9022, gcjLat: 31.1069 },
+    { name: "南迦巴瓦峰 (索松村)", address: "西藏自治区林芝市米林市派镇索松村雅鲁藏布大峡谷", gcjLng: 95.0583, gcjLat: 29.6278 },
+    { name: "长白山天池", address: "吉林省延边朝鲜族自治州安图县 · 长白山国家级自然保护区北坡天池", gcjLng: 128.0592, gcjLat: 42.0061 },
+    { name: "喀纳斯神仙湾", address: "新疆维吾尔自治区阿勒泰地区布尔津县喀纳斯景区", gcjLng: 87.0225, gcjLat: 48.6656 },
+    { name: "赛里木湖", address: "新疆维吾尔自治区博尔塔拉蒙古自治州博乐市赛里木湖风景名胜区", gcjLng: 81.1714, gcjLat: 44.5986 },
+    { name: "青海湖黑马河", address: "青海省海南藏族自治州共和县黑马河镇青海湖日出观景台", gcjLng: 99.7828, gcjLat: 36.7294 },
+    { name: "茶卡盐湖", address: "青海省海西蒙古族藏族自治州乌兰县茶卡镇天空之镜景区", gcjLng: 99.0847, gcjLat: 36.6883 },
+    { name: "武功山金顶", address: "江西省萍乡市芦溪县武功山国家级风景名胜区白鹤峰金顶", gcjLng: 114.1786, gcjLat: 27.4561 },
+    { name: "张家界武陵源天子山", address: "湖南省张家界市武陵源区张家界国家森林公园天子山观景台", gcjLng: 110.4533, gcjLat: 29.3736 },
+    { name: "庐山含鄱口", address: "江西省九江市庐山市庐山风景名胜区含鄱口日出观景台", gcjLng: 115.9936, gcjLat: 29.5389 },
+    { name: "峨眉山金顶", address: "四川省乐山市峨眉山市峨眉山风景区十方普贤金顶", gcjLng: 103.3347, gcjLat: 29.5206 }
 ];
+
+// 搜索自动补全状态变量
+let amapSuggestionDebounceTimer = null;
+let amapSuggestionAbortController = null;
+let amapCurrentSuggestions = [];
+let amapActiveSuggestionIndex = -1;
 
 // 自定义高德地图大头针图标（使用原生CSS无依赖渲染）
 const customPhotoPin = (typeof L !== 'undefined') ? L.divIcon({
@@ -1300,16 +1285,40 @@ function setAmapPickerLocation(gcjLng, gcjLat, locName = "自定义坐标点", s
     const [wgsLng, wgsLat] = CoordTransform.gcj02ToWgs84(gcjLng, gcjLat);
     amapWgsCoord = { lng: wgsLng, lat: wgsLat };
 
-    // 更新界面数值显示
+    // 更新界面数值显示及右上角经纬度输入框
     if (amapDisplayGcjLng) amapDisplayGcjLng.textContent = gcjLng.toFixed(6);
     if (amapDisplayGcjLat) amapDisplayGcjLat.textContent = gcjLat.toFixed(6);
     if (amapDisplayWgsLng) amapDisplayWgsLng.textContent = wgsLng.toFixed(6);
     if (amapDisplayWgsLat) amapDisplayWgsLat.textContent = wgsLat.toFixed(6);
     if (amapCurrentLocationName) amapCurrentLocationName.textContent = locName;
+    if (amapLngInput) amapLngInput.value = gcjLng.toFixed(6);
+    if (amapLatInput) amapLatInput.value = gcjLat.toFixed(6);
+    if (amapPasteBtn) amapPasteBtn.style.display = 'none';
+    if (amapCoordInputGroup) amapCoordInputGroup.style.borderColor = '#cbd5e1';
 
-    // 移动地图标记与视野
+    // 同步右侧菜单热门风光机位按钮高亮状态
+    document.querySelectorAll('.amap-preset-tag').forEach(tag => {
+        const tagName = tag.getAttribute('data-name');
+        if (tagName && tagName === locName) {
+            tag.classList.add('active');
+        } else {
+            tag.classList.remove('active');
+        }
+    });
+
+    // 移动或首次创建地图标记与视野
     if (amapMarker) {
         amapMarker.setLatLng([gcjLat, gcjLng]);
+    } else if (amapMap) {
+        amapMarker = L.marker([gcjLat, gcjLng], {
+            icon: customPhotoPin || undefined,
+            draggable: true
+        }).addTo(amapMap);
+
+        amapMarker.on('dragend', function() {
+            const pos = amapMarker.getLatLng();
+            setAmapPickerLocation(pos.lng, pos.lat, "手动拖拽选点");
+        });
     }
 
     if (shouldPan && amapMap) {
@@ -1342,10 +1351,174 @@ function switchAmapLayer(layerType) {
     }
 }
 
+// 隐藏搜索自动补全提示下拉框
+function hideAmapSearchSuggestions() {
+    if (amapSearchSuggestions) {
+        amapSearchSuggestions.style.display = 'none';
+        amapSearchSuggestions.innerHTML = '';
+    }
+    amapCurrentSuggestions = [];
+    amapActiveSuggestionIndex = -1;
+}
+
+// 选择某一条搜索建议项并定位
+function selectAmapSuggestionItem(item) {
+    if (!item) return;
+    if (amapSearchInput) {
+        amapSearchInput.value = item.name;
+    }
+    hideAmapSearchSuggestions();
+    setAmapPickerLocation(item.gcjLng, item.gcjLat, item.name, true, 13);
+}
+
+// 渲染搜索自动补全下拉列表
+function renderAmapSearchSuggestions(items, isLoading = false) {
+    if (!amapSearchSuggestions) return;
+    amapCurrentSuggestions = items || [];
+    amapActiveSuggestionIndex = -1;
+
+    if (amapCurrentSuggestions.length === 0) {
+        if (isLoading) {
+            amapSearchSuggestions.innerHTML = '<div class="amap-suggestion-empty">正在检索相关地点...</div>';
+            amapSearchSuggestions.style.display = 'block';
+        } else {
+            hideAmapSearchSuggestions();
+        }
+        return;
+    }
+
+    amapSearchSuggestions.innerHTML = '';
+    amapCurrentSuggestions.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'amap-suggestion-item';
+        row.setAttribute('data-index', String(idx));
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'amap-suggestion-icon';
+        iconSpan.textContent = '📍';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'amap-suggestion-content';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'amap-suggestion-title';
+        titleDiv.textContent = item.name;
+
+        const addrDiv = document.createElement('div');
+        addrDiv.className = 'amap-suggestion-address';
+        addrDiv.textContent = item.address || `${item.gcjLng.toFixed(4)}°E, ${item.gcjLat.toFixed(4)}°N`;
+
+        contentDiv.appendChild(titleDiv);
+        contentDiv.appendChild(addrDiv);
+        row.appendChild(iconSpan);
+        row.appendChild(contentDiv);
+
+        // 使用 mousedown 优先触发，防止 input blur 导致点击失效
+        row.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            selectAmapSuggestionItem(item);
+        });
+
+        amapSearchSuggestions.appendChild(row);
+    });
+
+    amapSearchSuggestions.style.display = 'block';
+}
+
+// 更新键盘上下键高亮的建议项
+function updateActiveSuggestionHighlight() {
+    if (!amapSearchSuggestions) return;
+    const rows = amapSearchSuggestions.querySelectorAll('.amap-suggestion-item');
+    rows.forEach((row, idx) => {
+        if (idx === amapActiveSuggestionIndex) {
+            row.classList.add('active');
+            row.scrollIntoView({ block: 'nearest' });
+        } else {
+            row.classList.remove('active');
+        }
+    });
+}
+
+// 根据输入文字实时查询候选地点（本地风光库 + 在线地理编码）
+function handleAmapSearchAutocomplete(rawQuery) {
+    const query = (rawQuery || '').trim();
+    if (!query) {
+        if (amapSuggestionDebounceTimer) clearTimeout(amapSuggestionDebounceTimer);
+        if (amapSuggestionAbortController) amapSuggestionAbortController.abort();
+        hideAmapSearchSuggestions();
+        return;
+    }
+
+    // 1. 立即匹配本地风光摄影机位词库（0ms 响应）
+    const lowerQuery = query.toLowerCase();
+    const localMatches = SCENIC_PRESETS.filter(p =>
+        p.name.toLowerCase().includes(lowerQuery) ||
+        (p.address && p.address.toLowerCase().includes(lowerQuery))
+    ).slice(0, 6);
+
+    renderAmapSearchSuggestions(localMatches, true);
+
+    // 2. 防抖发起在线地址检索，补充更多具体地点与详细地址
+    if (amapSuggestionDebounceTimer) clearTimeout(amapSuggestionDebounceTimer);
+    amapSuggestionDebounceTimer = setTimeout(async () => {
+        if (amapSuggestionAbortController) {
+            amapSuggestionAbortController.abort();
+        }
+        amapSuggestionAbortController = new AbortController();
+
+        try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(query)}&limit=6&accept-language=zh-CN`;
+            const resp = await fetch(url, {
+                headers: { 'Accept': 'application/json' },
+                signal: amapSuggestionAbortController.signal
+            });
+            if (!resp.ok) {
+                renderAmapSearchSuggestions(localMatches, false);
+                return;
+            }
+            const data = await resp.json();
+            const merged = [...localMatches];
+
+            if (Array.isArray(data)) {
+                for (const entry of data) {
+                    const wgsLat = parseFloat(entry.lat);
+                    const wgsLng = parseFloat(entry.lon);
+                    if (isNaN(wgsLat) || isNaN(wgsLng)) continue;
+
+                    const [gcjLng, gcjLat] = CoordTransform.wgs84ToGcj02(wgsLng, wgsLat);
+                    const primaryName = entry.name || (entry.display_name ? entry.display_name.split(',')[0].trim() : query);
+                    const fullAddr = entry.display_name || `${gcjLng.toFixed(4)}°E, ${gcjLat.toFixed(4)}°N`;
+
+                    // 避免与已有同名同位置项重复
+                    const isDuplicate = merged.some(m =>
+                        m.name === primaryName &&
+                        Math.abs(m.gcjLng - gcjLng) < 0.02 &&
+                        Math.abs(m.gcjLat - gcjLat) < 0.02
+                    );
+                    if (!isDuplicate) {
+                        merged.push({
+                            name: primaryName,
+                            address: fullAddr,
+                            gcjLng: gcjLng,
+                            gcjLat: gcjLat
+                        });
+                    }
+                }
+            }
+
+            renderAmapSearchSuggestions(merged.slice(0, 8), false);
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            renderAmapSearchSuggestions(localMatches, false);
+        }
+    }, 220);
+}
+
 // 搜索地点（优先匹配本地风光摄影名胜词库，支持在线地理编码）
 async function searchAmapLocation(query) {
     if (!query || !query.trim()) return;
     query = query.trim();
+    hideAmapSearchSuggestions();
 
     // 1. 本地知名风光胜地模糊匹配
     for (const preset of SCENIC_PRESETS) {
@@ -1361,7 +1534,7 @@ async function searchAmapLocation(query) {
             amapSearchBtn.textContent = "搜索中...";
             amapSearchBtn.disabled = true;
         }
-        const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+        const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=zh-CN`, {
             headers: { 'Accept': 'application/json' }
         });
         if (resp.ok) {
@@ -1390,38 +1563,42 @@ async function searchAmapLocation(query) {
     }
 }
 
-// 解析从高德官方坐标拾取器复制的经纬度文本
-function parsePastedAmapCoordinates(text) {
-    if (!text || !text.trim()) return;
-    text = text.trim();
-    // 替换中文符号
-    const cleanText = text.replace(/，/g, ',').replace(/；/g, ';').replace(/;/g, ',');
-    const matches = cleanText.match(/[-+]?[0-9]*\.?[0-9]+/g);
-    
-    if (!matches || matches.length < 2) {
-        if (amapPasteInput) amapPasteInput.style.borderColor = '#ef4444';
-        if (amapCurrentLocationName) amapCurrentLocationName.textContent = '❌ 坐标格式有误，请输入如: 116.397428, 39.909230';
+// 解析并定位右上角经纬度输入框中的自定义坐标
+function parsePastedAmapCoordinates() {
+    const rawLng = amapLngInput ? amapLngInput.value.trim() : '';
+    const rawLat = amapLatInput ? amapLatInput.value.trim() : '';
+
+    let lng = parseFloat(rawLng);
+    let lat = parseFloat(rawLat);
+
+    // 兼容用户在其中一个输入框内直接粘贴了“经度, 纬度”组合文本的情况
+    const combinedText = `${rawLng},${rawLat}`.replace(/，/g, ',').replace(/；/g, ',').replace(/;/g, ',');
+    const matches = combinedText.match(/[-+]?[0-9]*\.?[0-9]+/g);
+
+    if ((isNaN(lng) || isNaN(lat)) && matches && matches.length >= 2) {
+        const val1 = parseFloat(matches[0]);
+        const val2 = parseFloat(matches[1]);
+        if (val1 >= 60 && val1 <= 150 && val2 >= 0 && val2 <= 65) {
+            lng = val1;
+            lat = val2;
+        } else if (val2 >= 60 && val2 <= 150 && val1 >= 0 && val1 <= 65) {
+            lng = val2;
+            lat = val1;
+        } else {
+            lng = val1;
+            lat = val2;
+        }
+    }
+
+    if (isNaN(lng) || isNaN(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+        if (amapCoordInputGroup) amapCoordInputGroup.style.borderColor = '#ef4444';
         return;
     }
 
-    const val1 = parseFloat(matches[0]);
-    const val2 = parseFloat(matches[1]);
-    let lng, lat;
-
-    // 智能识别经度和纬度前后次序（中国经度通常在 70~140，纬度在 0~60）
-    if (val1 >= 60 && val1 <= 150 && val2 >= 0 && val2 <= 65) {
-        lng = val1;
-        lat = val2;
-    } else if (val2 >= 60 && val2 <= 150 && val1 >= 0 && val1 <= 65) {
-        lng = val2;
-        lat = val1;
-    } else {
-        lng = val1;
-        lat = val2;
-    }
-
-    if (amapPasteInput) amapPasteInput.style.borderColor = '#cbd5e1';
-    setAmapPickerLocation(lng, lat, "粘贴高德坐标点", true, 14);
+    if (amapCoordInputGroup) amapCoordInputGroup.style.borderColor = '#cbd5e1';
+    setAmapPickerLocation(lng, lat, "自定义坐标点", true, 14);
+    if (amapLngInput) amapLngInput.blur();
+    if (amapLatInput) amapLatInput.blur();
 }
 
 // 将高德地图拾取的坐标传递给 Cesium 并执行飞入或预览
@@ -1510,9 +1687,9 @@ function initAmapPicker() {
     const mapContainer = document.getElementById('amapLeafletMap');
     if (!mapContainer) return;
 
-    // 创建 Leaflet 实例，默认视角为全中国
+    // 创建 Leaflet 实例，默认视角为全中国（初始不添加红标）
     amapMap = L.map('amapLeafletMap', {
-        center: [amapGcjCoord.lat, amapGcjCoord.lng],
+        center: [36.0, 105.0],
         zoom: 4,
         zoomControl: true,
         attributionControl: false
@@ -1535,19 +1712,7 @@ function initAmapPicker() {
     });
     amapSatGroup = L.layerGroup([satTile, roadTile]);
 
-    // 创建可拖拽标记
-    amapMarker = L.marker([amapGcjCoord.lat, amapGcjCoord.lng], {
-        icon: customPhotoPin || undefined,
-        draggable: true
-    }).addTo(amapMap);
-
-    // 监听大头针拖拽结束事件
-    amapMarker.on('dragend', function() {
-        const pos = amapMarker.getLatLng();
-        setAmapPickerLocation(pos.lng, pos.lat, "手动拖拽选点");
-    });
-
-    // 监听地图点击事件
+    // 监听地图点击事件（点击后创建或移动红标）
     amapMap.on('click', function(e) {
         setAmapPickerLocation(e.latlng.lng, e.latlng.lat, "地图点击拾取点");
     });
@@ -1572,20 +1737,87 @@ function initAmapPicker() {
         });
     });
 
-    // 绑定地点搜索按钮与回车键
+    // 绑定地点搜索按钮、输入自动补全提示与键盘上下键选择
     if (amapSearchBtn && amapSearchInput) {
         amapSearchBtn.addEventListener('click', () => searchAmapLocation(amapSearchInput.value));
+
+        amapSearchInput.addEventListener('input', (e) => {
+            handleAmapSearchAutocomplete(e.target.value);
+        });
+
+        amapSearchInput.addEventListener('focus', () => {
+            if (amapSearchInput.value.trim()) {
+                handleAmapSearchAutocomplete(amapSearchInput.value);
+            }
+        });
+
         amapSearchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') searchAmapLocation(amapSearchInput.value);
+            if (amapCurrentSuggestions.length > 0 && amapSearchSuggestions && amapSearchSuggestions.style.display !== 'none') {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    amapActiveSuggestionIndex = (amapActiveSuggestionIndex + 1) % amapCurrentSuggestions.length;
+                    updateActiveSuggestionHighlight();
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    amapActiveSuggestionIndex = (amapActiveSuggestionIndex - 1 + amapCurrentSuggestions.length) % amapCurrentSuggestions.length;
+                    updateActiveSuggestionHighlight();
+                    return;
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (amapActiveSuggestionIndex >= 0 && amapActiveSuggestionIndex < amapCurrentSuggestions.length) {
+                        selectAmapSuggestionItem(amapCurrentSuggestions[amapActiveSuggestionIndex]);
+                    } else {
+                        searchAmapLocation(amapSearchInput.value);
+                    }
+                    return;
+                } else if (e.key === 'Escape') {
+                    hideAmapSearchSuggestions();
+                    return;
+                }
+            }
+            if (e.key === 'Enter') {
+                searchAmapLocation(amapSearchInput.value);
+            }
+        });
+
+        // 点击搜索区域外部时收起下拉提示列表
+        document.addEventListener('click', (e) => {
+            if (amapSearchWrapper && !amapSearchWrapper.contains(e.target)) {
+                hideAmapSearchSuggestions();
+            }
         });
     }
 
-    // 绑定坐标粘贴定位按钮与回车键
-    if (amapPasteBtn && amapPasteInput) {
-        amapPasteBtn.addEventListener('click', () => parsePastedAmapCoordinates(amapPasteInput.value));
-        amapPasteInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') parsePastedAmapCoordinates(amapPasteInput.value);
+    // 绑定经纬度输入框交互：点击或输入时显示“定位”按钮，支持粘贴自动拆分及回车定位
+    const showLocateButton = () => {
+        if (amapPasteBtn) amapPasteBtn.style.display = 'inline-block';
+    };
+
+    const handleCoordPasteSplit = (e) => {
+        const val = e.target.value;
+        if (val && (val.includes(',') || val.includes('，') || val.includes(';'))) {
+            const nums = val.replace(/，/g, ',').replace(/;/g, ',').match(/[-+]?[0-9]*\.?[0-9]+/g);
+            if (nums && nums.length >= 2) {
+                if (amapLngInput) amapLngInput.value = nums[0];
+                if (amapLatInput) amapLatInput.value = nums[1];
+            }
+        }
+        showLocateButton();
+    };
+
+    [amapLngInput, amapLatInput].forEach(inputEl => {
+        if (!inputEl) return;
+        inputEl.addEventListener('focus', showLocateButton);
+        inputEl.addEventListener('click', showLocateButton);
+        inputEl.addEventListener('input', handleCoordPasteSplit);
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') parsePastedAmapCoordinates();
         });
+    });
+
+    if (amapPasteBtn) {
+        amapPasteBtn.addEventListener('click', () => parsePastedAmapCoordinates());
     }
 
     // 绑定关闭弹窗按钮
@@ -1617,9 +1849,6 @@ function initAmapPicker() {
     if (openAmapPickerFromControlsBtn) {
         openAmapPickerFromControlsBtn.addEventListener('click', openAmapPicker);
     }
-
-    // 初始化一次当前选点数据
-    setAmapPickerLocation(amapGcjCoord.lng, amapGcjCoord.lat, "请点击地图或搜索选点");
 }
 
 // 打开高德坐标拾取器弹窗
@@ -1632,15 +1861,79 @@ function openAmapPicker() {
     setTimeout(() => {
         if (amapMap) {
             amapMap.invalidateSize();
-            amapMap.setView([amapGcjCoord.lat, amapGcjCoord.lng], amapMap.getZoom() || 4);
+            const targetLat = amapGcjCoord ? amapGcjCoord.lat : 36.0;
+            const targetLng = amapGcjCoord ? amapGcjCoord.lng : 105.0;
+            amapMap.setView([targetLat, targetLng], amapMap.getZoom() || 4);
         }
     }, 120);
 }
 
 // 关闭高德坐标拾取器弹窗
 function closeAmapPicker() {
+    hideAmapSearchSuggestions();
     if (!amapPickerModal) return;
     amapPickerModal.style.display = 'none';
+}
+
+// 使悬浮面板支持鼠标直接拖拽移动位置（不记忆位置，刷新即重置为默认）
+function makePanelDraggable(panelEl) {
+    if (!panelEl || panelEl._isDraggableInitialized) return;
+    panelEl._isDraggableInitialized = true;
+
+    let isDragging = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    panelEl.addEventListener('mousedown', function(e) {
+        // 仅响应鼠标左键
+        if (e.button !== 0) return;
+
+        // 排除面板内部交互控件（按钮、输入框、滑块、链接、开关等），避免干扰正常点击与滑动
+        if (e.target.closest('button, input, a, select, textarea, label.switch, .slider')) {
+            return;
+        }
+
+        isDragging = true;
+        const rect = panelEl.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+
+        // 切换为以左上角像素坐标绝对定位（消除 right 或 transform: translateX(-50%) 带来的偏移跳变）
+        panelEl.style.left = rect.left + 'px';
+        panelEl.style.top = rect.top + 'px';
+        panelEl.style.right = 'auto';
+        panelEl.style.bottom = 'auto';
+        panelEl.style.transform = 'none';
+
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+
+        const rect = panelEl.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+
+        const newLeft = Math.min(Math.max(0, e.clientX - dragOffsetX), maxLeft);
+        const newTop = Math.min(Math.max(0, e.clientY - dragOffsetY), maxTop);
+
+        panelEl.style.left = newLeft + 'px';
+        panelEl.style.top = newTop + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (isDragging) {
+            isDragging = false;
+        }
+    });
+}
+
+// 初始化三个悬浮菜单面板的鼠标拖拽功能
+function initDraggablePanels() {
+    makePanelDraggable(controls);     // 相机控制菜单
+    makePanelDraggable(timeControls); // 时间设置菜单
+    makePanelDraggable(cameraInfo);   // 经纬度和方位角菜单
 }
 
 // 主初始化函数
@@ -1652,6 +1945,9 @@ function main() {
     
     // 提前在后台预加载3D地形，避免选点进入相机模式时因发起网络请求而产生数秒的原地卡顿
     initializeTerrain();
+
+    // 初始化相机控制菜单、时间设置菜单、经纬度和方位角菜单的鼠标拖拽功能
+    initDraggablePanels();
 
     // 初始化高德地图坐标拾取器并在进入初始页面时优先弹出
     initAmapPicker();

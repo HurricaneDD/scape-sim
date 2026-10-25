@@ -7,6 +7,7 @@
     <meta name="description" content="基于 CesiumJS 的实景风光摄影模拟工具，用于模拟在地球上实景的风光摄影、光线与焦段估算。">
     <meta property="og:title" content="风光摄影模拟器">
     <meta property="og:description" content="基于 CesiumJS 的实景风光摄影模拟工具，用于模拟在地球上实景的风光摄影、光线与焦段估算。">
+    <meta name="color-scheme" content="light dark">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -127,9 +128,110 @@
             font-size: 0.95em;
             color: #555;
         }
+
+        /* 深色模式：黑底白字 */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: black;
+                color: white;
+            }
+            .container {
+                border-color: white;
+                box-shadow: 0 0 10px rgba(255,255,255,0.1);
+            }
+            .header,
+            .showcase,
+            .footer {
+                border-color: #444;
+            }
+            .header a {
+                color: white;
+            }
+            .header a:hover {
+                color: #ccc;
+            }
+            .btn {
+                border-color: white;
+                color: white;
+            }
+            .btn:hover {
+                background-color: #222;
+            }
+            .btn .small-text {
+                color: #bbb;
+            }
+            .showcase-item img {
+                border-color: #444;
+            }
+            .showcase-item p {
+                color: #ccc;
+            }
+            .footer {
+                color: #aaa;
+            }
+        }
+
+        body.dark-mode {
+            background-color: black;
+            color: white;
+        }
+        body.dark-mode .container {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        body.dark-mode .header,
+        body.dark-mode .showcase,
+        body.dark-mode .footer {
+            border-color: #444;
+        }
+        body.dark-mode .header a {
+            color: white;
+        }
+        body.dark-mode .header a:hover {
+            color: #ccc;
+        }
+        body.dark-mode .btn {
+            border-color: white;
+            color: white;
+        }
+        body.dark-mode .btn:hover {
+            background-color: #222;
+        }
+        body.dark-mode .btn .small-text {
+            color: #bbb;
+        }
+        body.dark-mode .showcase-item img {
+            border-color: #444;
+        }
+        body.dark-mode .showcase-item p {
+            color: #ccc;
+        }
+        body.dark-mode .footer {
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
+    <script>
+        (function () {
+            var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+            function applyTheme(e) {
+                if (e && e.matches) {
+                    document.body.classList.add('dark-mode');
+                } else {
+                    document.body.classList.remove('dark-mode');
+                }
+            }
+            if (mq) {
+                applyTheme(mq);
+                if (mq.addEventListener) {
+                    mq.addEventListener('change', applyTheme);
+                } else if (mq.addListener) {
+                    mq.addListener(applyTheme);
+                }
+            }
+        })();
+    </script>
     <div class="container">
         <div class="header">
             <h1>

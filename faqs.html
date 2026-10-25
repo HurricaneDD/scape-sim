@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>常见问题-风光摄影模拟器</title>
+    <meta name="color-scheme" content="light dark">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -89,9 +90,98 @@
         .back-link:hover {
             background-color: #f0f0f0;
         }
+
+        /* 深色模式：黑底白字 */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: black;
+                color: white;
+            }
+            .container {
+                border-color: white;
+                box-shadow: 0 0 10px rgba(255,255,255,0.1);
+            }
+            .header,
+            .footer {
+                border-color: #444;
+            }
+            .faq-item {
+                background-color: #161616;
+                border: 1px solid #333;
+            }
+            .faq-question {
+                color: white;
+            }
+            .faq-answer {
+                color: #ddd;
+            }
+            .back-link {
+                border-color: white;
+                color: white;
+            }
+            .back-link:hover {
+                background-color: #222;
+            }
+            .footer {
+                color: #aaa;
+            }
+        }
+
+        body.dark-mode {
+            background-color: black;
+            color: white;
+        }
+        body.dark-mode .container {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        body.dark-mode .header,
+        body.dark-mode .footer {
+            border-color: #444;
+        }
+        body.dark-mode .faq-item {
+            background-color: #161616;
+            border: 1px solid #333;
+        }
+        body.dark-mode .faq-question {
+            color: white;
+        }
+        body.dark-mode .faq-answer {
+            color: #ddd;
+        }
+        body.dark-mode .back-link {
+            border-color: white;
+            color: white;
+        }
+        body.dark-mode .back-link:hover {
+            background-color: #222;
+        }
+        body.dark-mode .footer {
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
+    <script>
+        (function () {
+            var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+            function applyTheme(e) {
+                if (e && e.matches) {
+                    document.body.classList.add('dark-mode');
+                } else {
+                    document.body.classList.remove('dark-mode');
+                }
+            }
+            if (mq) {
+                applyTheme(mq);
+                if (mq.addEventListener) {
+                    mq.addEventListener('change', applyTheme);
+                } else if (mq.addListener) {
+                    mq.addListener(applyTheme);
+                }
+            }
+        })();
+    </script>
     <div class="container">
         <div class="header">
             <h1>

@@ -30,6 +30,8 @@
             min-width: 250px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             border: 1px solid #ddd;
+            cursor: move;
+            user-select: none;
         }
         
         .control-group {
@@ -444,6 +446,8 @@
             min-width: 300px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             border: 1px solid #ddd;
+            cursor: move;
+            user-select: none;
         }
         
         #timeDisplay {
@@ -483,6 +487,8 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.15);
             border: 1px solid #ddd;
             font-size: 9px;
+            cursor: move;
+            user-select: none;
         }
         
         #cameraInfo h3 {
@@ -834,14 +840,16 @@
             background: rgba(239, 68, 68, 0.85);
         }
 
-        /* 顶部工具栏：搜索、解析高德坐标、官方拾取器链接 */
+        /* 顶部工具栏：搜索、解析高德坐标 */
         .amap-toolbar {
-            padding: 10px 18px 8px 18px;
+            padding: 10px 18px;
             background: #f8fafc;
             border-bottom: 1px solid #e2e8f0;
             display: flex;
             flex-direction: column;
             gap: 8px;
+            position: relative;
+            z-index: 2000;
         }
 
         .amap-toolbar-row {
@@ -851,25 +859,32 @@
             flex-wrap: wrap;
         }
 
+        .amap-search-wrapper {
+            position: relative;
+            width: 100%;
+            z-index: 2500;
+        }
+
         .amap-input-group {
             display: flex;
             align-items: center;
             background: #ffffff;
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            padding: 2px 4px 2px 8px;
-            flex: 1;
-            min-width: 240px;
+            padding: 3px 5px 3px 8px;
+            width: 100%;
+            box-sizing: border-box;
             box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         }
 
         .amap-input-group input {
             border: none;
             outline: none;
-            font-size: 13px;
+            font-size: 12.5px;
             color: #1e293b;
             flex: 1;
-            padding: 5px;
+            min-width: 0;
+            padding: 5px 4px;
             background: transparent;
         }
 
@@ -890,70 +905,156 @@
             background: #0369a1;
         }
 
-        .amap-link-btn {
-            background: #f1f5f9;
-            color: #0369a1;
+        /* 搜索自动补全下拉提示列表 */
+        .amap-search-suggestions {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: #ffffff;
             border: 1px solid #cbd5e1;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            white-space: nowrap;
-            transition: all 0.15s;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2), 0 4px 10px -2px rgba(15, 23, 42, 0.1);
+            max-height: 280px;
+            overflow-y: auto;
+            z-index: 3000;
+            display: none;
         }
 
-        .amap-link-btn:hover {
-            background: #e2e8f0;
+        .amap-suggestion-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            transition: background 0.12s;
+        }
+
+        .amap-suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .amap-suggestion-item:hover,
+        .amap-suggestion-item.active {
+            background: #f0f9ff;
+        }
+
+        .amap-suggestion-icon {
             color: #0284c7;
+            font-size: 14px;
+            line-height: 1.4;
+            flex-shrink: 0;
         }
 
-        /* 预设风光摄影机位标签 */
-        .amap-preset-bar {
+        .amap-suggestion-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .amap-suggestion-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .amap-suggestion-address {
+            font-size: 11px;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .amap-suggestion-empty {
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #64748b;
+            text-align: center;
+        }
+
+        /* 主体区域：左侧 2/3 地图 + 右侧 1/3 常驻侧面菜单 */
+        .amap-body-container {
+            display: flex;
+            width: 100%;
+            height: 500px;
+            background: #f8fafc;
+        }
+
+        /* 地图容器（占约 2/3 宽度） */
+        .amap-map-wrapper {
+            position: relative;
+            flex: 2;
+            width: 66.67%;
+            height: 100%;
+            background: #e2e8f0;
+        }
+
+        /* 右侧常驻侧面菜单（占约 1/3 宽度） */
+        .amap-side-menu {
+            flex: 1;
+            width: 33.33%;
+            min-width: 280px;
+            height: 100%;
+            background: #f8fafc;
+            border-left: 1px solid #e2e8f0;
+            padding: 14px 16px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .amap-side-menu-header {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #1e293b;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e2e8f0;
             display: flex;
             align-items: center;
             gap: 6px;
-            overflow-x: auto;
-            padding-bottom: 2px;
-            scrollbar-width: thin;
         }
 
-        .amap-preset-label {
-            font-size: 12px;
-            color: #64748b;
-            white-space: nowrap;
-            font-weight: 600;
+        /* 预设风光摄影机位标签网格 */
+        .amap-preset-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
         }
 
         .amap-preset-tag {
             background: #ffffff;
             border: 1px solid #cbd5e1;
-            border-radius: 12px;
-            padding: 2px 10px;
-            font-size: 12px;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12.5px;
+            font-weight: 500;
             color: #334155;
             cursor: pointer;
+            text-align: center;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             transition: all 0.15s;
             user-select: none;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
         }
 
-        .amap-preset-tag:hover {
+        .amap-preset-tag:hover,
+        .amap-preset-tag.active {
             background: #0284c7;
             color: white;
             border-color: #0284c7;
             transform: translateY(-1px);
-        }
-
-        /* 地图容器 */
-        .amap-map-wrapper {
-            position: relative;
-            height: 420px;
-            width: 100%;
-            background: #e2e8f0;
+            box-shadow: 0 3px 8px rgba(2, 132, 199, 0.25);
         }
 
         #amapLeafletMap {
@@ -1202,97 +1303,74 @@
             <!-- 头部 -->
             <div class="amap-header">
                 <div class="amap-header-title">
-                    <span style="font-size: 20px;">📍</span>
-                    <h3>高德地图坐标拾取器</h3>
+                    <h3>请选择机位</h3>
                 </div>
-                <button id="closeAmapPickerModalBtn" class="amap-close-btn" title="关闭拾取器">×</button>
             </div>
 
-            <!-- 工具栏：搜索与坐标解析 -->
-            <div class="amap-toolbar">
-                <div class="amap-toolbar-row">
-                    <div class="amap-input-group">
-                        <span style="color: #64748b; font-size: 14px;">🔍</span>
-                        <input type="text" id="amapSearchInput" placeholder="搜索地名/景区 (如: 贡嘎雪山、牛背山、黄山...)">
-                        <button id="amapSearchBtn" class="amap-input-btn">搜索</button>
+            <!-- 主体区域：左侧 2/3 地图区域 + 右侧 1/3 常驻侧面菜单 -->
+            <div class="amap-body-container">
+                <!-- 地图区域 -->
+                <div class="amap-map-wrapper">
+                    <div id="amapLeafletMap"></div>
+                    <!-- 图层切换器 -->
+                    <div class="amap-layer-toggle">
+                        <button id="amapLayerVectorBtn" class="amap-layer-btn active">🗺️ 矢量地图</button>
+                        <button id="amapLayerSatBtn" class="amap-layer-btn">🛰️ 卫星影像</button>
+                    </div>
+                    <div class="amap-map-crosshair-tip">💡 提示：点击地图任意处或拖拽红点即可拾取坐标</div>
+                </div>
+
+                <!-- 右侧常驻侧面菜单（约占窗口总宽度 1/3） -->
+                <div class="amap-side-menu">
+                    <!-- 搜索地名/景区（带自动补全下拉提示） -->
+                    <div class="amap-search-wrapper" id="amapSearchWrapper">
+                        <div class="amap-input-group">
+                            <span style="color: #64748b; font-size: 14px;">🔍</span>
+                            <input type="text" id="amapSearchInput" autocomplete="off" placeholder="搜索地名/景区 (如: 贡嘎、黄山...)">
+                            <button id="amapSearchBtn" class="amap-input-btn">搜索</button>
+                        </div>
+                        <div id="amapSearchSuggestions" class="amap-search-suggestions"></div>
                     </div>
 
-                    <div class="amap-input-group">
-                        <span style="color: #64748b; font-size: 14px;">📌</span>
-                        <input type="text" id="amapPasteInput" placeholder="粘贴高德坐标 (如: 116.397428, 39.909230)">
-                        <button id="amapPasteBtn" class="amap-input-btn">定位</button>
+                    <!-- 经纬度显示与自定义输入定位 -->
+                    <div class="amap-input-group" id="amapCoordInputGroup">
+                        <span style="color: #64748b; font-size: 12px; font-weight: 600; white-space: nowrap;">经度:</span>
+                        <input type="text" id="amapLngInput" placeholder="经度">
+                        <span style="color: #cbd5e1; margin: 0 3px;">|</span>
+                        <span style="color: #64748b; font-size: 12px; font-weight: 600; white-space: nowrap;">纬度:</span>
+                        <input type="text" id="amapLatInput" placeholder="纬度">
+                        <button id="amapPasteBtn" class="amap-input-btn" style="display: none;">定位</button>
                     </div>
 
-                    <a href="https://lbs.amap.com/tools/picker" target="_blank" rel="noopener noreferrer" class="amap-link-btn" title="在浏览器新窗口打开高德官方坐标拾取工具">
-                        <span>高德官方拾取器 ↗</span>
-                    </a>
-                </div>
-
-                <!-- 经典风光机位快速选择 -->
-                <div class="amap-preset-bar">
-                    <span class="amap-preset-label">热门风光机位:</span>
-                    <button class="amap-preset-tag" data-lng="101.8797" data-lat="29.5969" data-name="贡嘎雪山">贡嘎雪山</button>
-                    <button class="amap-preset-tag" data-lng="102.3167" data-lat="29.7667" data-name="牛背山">牛背山</button>
-                    <button class="amap-preset-tag" data-lng="86.9250" data-lat="27.9881" data-name="珠穆朗玛峰">珠穆朗玛峰</button>
-                    <button class="amap-preset-tag" data-lng="98.6833" data-lat="28.4333" data-name="梅里雪山">梅里雪山</button>
-                    <button class="amap-preset-tag" data-lng="100.3475" data-lat="28.3970" data-name="稻城亚丁">稻城亚丁</button>
-                    <button class="amap-preset-tag" data-lng="118.1722" data-lat="30.1347" data-name="黄山光明顶">黄山光明顶</button>
-                    <button class="amap-preset-tag" data-lng="117.1083" data-lat="36.2558" data-name="泰山玉皇顶">泰山玉皇顶</button>
-                    <button class="amap-preset-tag" data-lng="110.0811" data-lat="34.4827" data-name="华山南峰">华山南峰</button>
-                    <button class="amap-preset-tag" data-lng="110.4578" data-lat="24.9389" data-name="桂林相公山">桂林相公山</button>
-                    <button class="amap-preset-tag" data-lng="120.1583" data-lat="30.2589" data-name="杭州西湖">杭州西湖</button>
-                    <button class="amap-preset-tag" data-lng="103.1833" data-lat="34.1833" data-name="扎尕那">扎尕那</button>
-                    <button class="amap-preset-tag" data-lng="116.397428" data-lat="39.909230" data-name="北京故宫">北京故宫</button>
+                    <div class="amap-side-menu-header">
+                        <span>热门风光机位:</span>
+                    </div>
+                    <div class="amap-preset-grid">
+                        <button class="amap-preset-tag" data-lng="101.8797" data-lat="29.5969" data-name="贡嘎雪山">贡嘎雪山</button>
+                        <button class="amap-preset-tag" data-lng="102.3167" data-lat="29.7667" data-name="牛背山">牛背山</button>
+                        <button class="amap-preset-tag" data-lng="86.9250" data-lat="27.9881" data-name="珠穆朗玛峰">珠穆朗玛峰</button>
+                        <button class="amap-preset-tag" data-lng="98.6833" data-lat="28.4333" data-name="梅里雪山">梅里雪山</button>
+                        <button class="amap-preset-tag" data-lng="100.3475" data-lat="28.3970" data-name="稻城亚丁">稻城亚丁</button>
+                        <button class="amap-preset-tag" data-lng="118.1722" data-lat="30.1347" data-name="黄山光明顶">黄山光明顶</button>
+                        <button class="amap-preset-tag" data-lng="117.1083" data-lat="36.2558" data-name="泰山玉皇顶">泰山玉皇顶</button>
+                        <button class="amap-preset-tag" data-lng="110.0811" data-lat="34.4827" data-name="华山南峰">华山南峰</button>
+                        <button class="amap-preset-tag" data-lng="110.4578" data-lat="24.9389" data-name="桂林相公山">桂林相公山</button>
+                        <button class="amap-preset-tag" data-lng="120.1583" data-lat="30.2589" data-name="杭州西湖">杭州西湖</button>
+                        <button class="amap-preset-tag" data-lng="103.1833" data-lat="34.1833" data-name="扎尕那">扎尕那</button>
+                        <button class="amap-preset-tag" data-lng="116.397428" data-lat="39.909230" data-name="北京故宫">北京故宫</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- 地图区域 -->
-            <div class="amap-map-wrapper">
-                <div id="amapLeafletMap"></div>
-                <!-- 图层切换器 -->
-                <div class="amap-layer-toggle">
-                    <button id="amapLayerVectorBtn" class="amap-layer-btn active">🗺️ 矢量地图</button>
-                    <button id="amapLayerSatBtn" class="amap-layer-btn">🛰️ 卫星影像</button>
-                </div>
-                <div class="amap-map-crosshair-tip">💡 提示：点击地图任意处或拖拽红点即可拾取坐标</div>
-            </div>
-
-            <!-- 底部：坐标展示与确认飞入操作 -->
+            <!-- 底部：确认飞入操作 -->
             <div class="amap-footer">
-                <div class="amap-coords-display-grid">
-                    <div class="amap-coord-card">
-                        <div class="amap-coord-card-header">
-                            <span class="amap-coord-title">📍 高德原始拾取坐标</span>
-                        </div>
-                        <div class="amap-coord-values">
-                            <span>经度: <strong id="amapDisplayGcjLng">105.000000</strong>°</span>
-                            <span>纬度: <strong id="amapDisplayGcjLat">36.000000</strong>°</span>
-                        </div>
-                        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
-                            地点: <span id="amapCurrentLocationName">请点击地图或搜索选点</span>
-                        </div>
-                    </div>
-
-                    <div class="amap-coord-card highlight">
-                        <div class="amap-coord-card-header">
-                            <span class="amap-coord-title">🌐 实景三维地球坐标</span>
-                        </div>
-                        <div class="amap-coord-values">
-                            <span>经度: <strong id="amapDisplayWgsLng" style="color: #047857;">105.000000</strong>°</span>
-                            <span>纬度: <strong id="amapDisplayWgsLat" style="color: #047857;">36.000000</strong>°</span>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="amap-action-row">
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <button id="amapConfirmFlyBtn" class="amap-btn-primary">
-                            <span>🚀</span>
-                            <span>确认选择并飞入Cesium模拟画面</span>
+                            <span>开始第一视角模拟</span>
                         </button>
                         <button id="amapPreviewBtn" class="amap-btn-secondary">
-                            <span>👁️</span>
-                            <span>在地球上预览此点</span>
+                            <span>开启空中视角预览</span>
                         </button>
                     </div>
 
@@ -1433,20 +1511,21 @@
             </div>
             
             <div class="control-group" style="margin-top: 20px;">
-                <label class="switch-label">能见度遮罩:</label>
-                <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">添加遮罩，遮挡一定距离外的物体，模拟低能见度下远处不可见的情况。</p>
+                <label class="switch-label">距离雾:</label>
+                <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">模拟现实生活中能见度不足的大气渐进雾化场景，随距离增加景物逐渐隐入雾中。</p>
                 <div style="margin-top: 10px;">
-                    <button id="visibility5km" class="button visibility-option-btn">5km</button>
-                    <button id="visibility10km" class="button visibility-option-btn">10km</button>
-                    <button id="visibility15km" class="button visibility-option-btn">15km</button>
-                    <button id="visibility20km" class="button visibility-option-btn">20km</button>
-                    <button id="visibility25km" class="button visibility-option-btn">25km</button>
+                    <button id="fog5km" class="button visibility-option-btn">5km</button>
+                    <button id="fog10km" class="button visibility-option-btn">10km</button>
+                    <button id="fog15km" class="button visibility-option-btn">15km</button>
+                    <button id="fog20km" class="button visibility-option-btn">20km</button>
+                    <button id="fog25km" class="button visibility-option-btn">25km</button>
+                    <button id="fog30km" class="button visibility-option-btn">30km</button>
                 </div>
                 
                 <div style="margin-top: 10px; display: flex; align-items: center;">
-                    <input type="number" id="customVisibility" placeholder="自定义能见度(km)" min="1" max="100" style="flex: 1; padding: 6px; margin-right: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                    <button id="setCustomVisibility" class="button visibility-option-btn">设置</button>
-                    <button id="closeVisibility" class="button" style="background: #f44336; margin-left: 5px;">关闭遮罩</button>
+                    <input type="number" id="customFogVisibility" placeholder="自定义能见度(km)" min="1" max="100" style="flex: 1; padding: 6px; margin-right: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    <button id="setCustomFogVisibility" class="button visibility-option-btn">设置</button>
+                    <button id="closeFogVisibility" class="button" style="background: #f44336; margin-left: 5px;">关闭距离雾</button>
                 </div>
             </div>
         </div>

@@ -600,18 +600,15 @@
             cursor: not-allowed;
         }
         
-        /* 选择点标记 */
+        /* 选择点标记（红色头大头针） */
         .selection-marker {
             position: absolute;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: rgba(255, 0, 0, 0.8);
-            border: 3px solid white;
-            box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
-            transform: translate(-50%, -50%);
+            width: 32px;
+            height: 40px;
+            transform: translate(-50%, -95%);
             pointer-events: none;
             z-index: 1500;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
         }
         
         /* 确保Cesium官方时间线可见 */
@@ -1317,7 +1314,7 @@
                         <button id="amapLayerVectorBtn" class="amap-layer-btn active">🗺️ 矢量地图</button>
                         <button id="amapLayerSatBtn" class="amap-layer-btn">🛰️ 卫星影像</button>
                     </div>
-                    <div class="amap-map-crosshair-tip">💡 提示：点击地图任意处或拖拽红点即可拾取坐标</div>
+                    <div class="amap-map-crosshair-tip">💡 提示：点击地图任意处或拖拽大头针即可拾取坐标</div>
                 </div>
 
                 <!-- 右侧常驻侧面菜单（约占窗口总宽度 1/3） -->
@@ -1417,8 +1414,7 @@
                 <button id="openAmapPickerFromControlsBtn" class="button" style="background: #059669; color: white;">📍 更换机位</button>
                 <button id="envParamsBtn" class="button">环境与天气</button>
                 <button id="hideUIBtn" class="button">隐藏UI</button>
-                <a href="index.html" class="button">返回主页</a>
-                <a href="faqs.html" class="button">常见问题</a>
+                <button id="faqModalBtn" class="button">常见问题</button>
             </div>
         </div>
     </div>
@@ -1500,7 +1496,7 @@
             <p style="font-size: 13px; color: #666; margin-top: 5px; margin-bottom: 15px;">模拟现实可能存在的特殊天气环境情况。</p>
             
             <div class="control-group">
-                <label class="switch-label">地形光照:</label>
+                <label class="switch-label">地形光照（夜晚效果）:</label>
                 <p style="font-size: 12px; color: #888; margin-top: 2px; margin-bottom: 8px;">模拟昼夜效果，详见"常见问题"。</p>
                 <div class="switch-container">
                     <label class="switch">
@@ -1527,6 +1523,64 @@
                     <button id="setCustomFogVisibility" class="button visibility-option-btn">设置</button>
                     <button id="closeFogVisibility" class="button" style="background: #f44336; margin-left: 5px;">关闭距离雾</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 常见问题悬浮窗 (展示 faqs.html 内容) -->
+    <div id="faqModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.55); z-index: 3500; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
+        <div id="faqModalContent" style="background: white; color: #222; border-radius: 12px; width: 760px; max-width: 92vw; max-height: 85vh; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.35); border: 1px solid #ddd; display: flex; flex-direction: column; font-family: Arial, sans-serif;">
+            <button id="closeFaqModalBtn" class="close-btn" title="关闭">×</button>
+            <div style="padding: 18px 24px 12px 24px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+                <h2 style="margin: 0 0 6px 0; font-size: 22px; color: #111;">常见问题</h2>
+                <p style="margin: 0; font-size: 13.5px; color: #555;">这里收集了使用时常见的功能解释、问题和解答。</p>
+            </div>
+            <div id="faqModalBody" style="padding: 18px 24px; overflow-y: auto; flex: 1;">
+                <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：选点时，地图上光秃秃的，没有地标，找不到地点怎么办？</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：点击右上角偏右侧的按钮选择地图图层。默认是“Bing Maps Aerial（必应纯卫星地图）”，可以选择“Bing Maps Aerial with Labels（带标记的必应卫星地图）”。如此地图上会有英文标记，方便选点。</p>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：地形光照是啥意思？</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：</p>
+                        <p style="margin: 4px 0;">开启：有日出、日落、黑夜、星空效果，模拟真实的太阳光照效果。</p>
+                        <p style="margin: 4px 0;">关闭：始终是类似白天正午时刻的光照效果。</p>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：为啥天上会有两个太阳？（未开启“地形光照”时）</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：一个太阳看起来有明显的白色边界，并且有四射的光芒效果。这是“真太阳”，可以反映真实世界的太阳方位。</p>
+                        <p style="margin: 4px 0;">另一个太阳没有明显的边界，也没有光芒效果，看起来像是空中一团白色的光晕。</p>
+                        <p style="margin: 4px 0;">是“假太阳”，会始终固定在天顶。在未开启“地形光照”的情况下负责整体环境光照。若开启“环境参数/地形光照”则会消失。</p>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：为啥月球看起来大的吓人？</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：设计时故意加大月球，目的是更清晰地显示月球方位。若不增大，月球会看起来特别小，难以在天空中找到。</p>
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：为什么卫星地景加载这么慢？</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：默认底图是Bing Maps Aerial（必应卫星地图），加载可能较慢。</p>
+                        <p style="margin: 4px 0;">建议在网络环境较好的情况下使用，若还无法正常加载，可以尝试科学上网。</p>
+                        <p style="margin: 4px 0;">由于自定义国内底图（如高德、百度、天地图）的难度较大，目前暂不考虑加入此功能。</p>
+                    </div>
+                </div>
+                <div style="margin-bottom: 8px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：有时候明明点击选择了地点，但却没反应，无法进入相机模式？</div>
+                    <div style="line-height: 1.6; font-size: 14px; color: #444;">
+                        <p style="margin: 4px 0;">A：可能是网络太慢，无法正常加载三维地形数据。尝试在更好的网络环境下使用，或尝试科学上网。</p>
+                    </div>
+                </div>
+            </div>
+            <div style="padding: 10px 24px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #777;">
+                此页面由Github Pages驱动，页面源码by Trae AI, HurricaneDD负责维护
             </div>
         </div>
     </div>

@@ -302,16 +302,43 @@ function setupMapSelection() {
     }
 }
 
-// 添加选择点标记 - 修复API错误
+// 红色头大头针 SVG 图标（针尖位于底部中心，精准指向拾取坐标点）
+const RED_PUSHPIN_SVG = `
+<svg viewBox="0 0 32 40" width="32" height="40" xmlns="http://www.w3.org/2000/svg" style="display:block; overflow:visible;">
+    <defs>
+        <radialGradient id="redPinHeadGrad" cx="35%" cy="30%" r="65%">
+            <stop offset="0%" stop-color="#ff7b7b"/>
+            <stop offset="45%" stop-color="#ef4444"/>
+            <stop offset="85%" stop-color="#b91c1c"/>
+            <stop offset="100%" stop-color="#7f1d1d"/>
+        </radialGradient>
+        <linearGradient id="pinNeedleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#94a3b8"/>
+            <stop offset="50%" stop-color="#f8fafc"/>
+            <stop offset="100%" stop-color="#475569"/>
+        </linearGradient>
+    </defs>
+    <!-- 底部针尖投影 -->
+    <ellipse cx="16" cy="38" rx="4.5" ry="1.8" fill="rgba(0,0,0,0.35)"/>
+    <!-- 金属针杆（针尖在 16, 38） -->
+    <polygon points="14.6,20 17.4,20 16,38" fill="url(#pinNeedleGrad)" stroke="#475569" stroke-width="0.4"/>
+    <!-- 红色大头针圆头 -->
+    <circle cx="16" cy="12" r="10" fill="url(#redPinHeadGrad)" stroke="#ffffff" stroke-width="1.5"/>
+    <!-- 顶部高光点 -->
+    <ellipse cx="12.5" cy="8.5" rx="3.2" ry="2.2" transform="rotate(-25 12.5 8.5)" fill="rgba(255,255,255,0.65)"/>
+</svg>`;
+
+// 添加选择点标记 - 红色头大头针
 function addSelectionMarker(position) {
     // 移除旧的标记
     if (selectionMarker) {
         selectionMarker.remove();
     }
     
-    // 创建新的标记
+    // 创建新的红色头大头针标记
     selectionMarker = document.createElement('div');
     selectionMarker.className = 'selection-marker';
+    selectionMarker.innerHTML = RED_PUSHPIN_SVG;
     document.body.appendChild(selectionMarker);
     
     // 将3D坐标转换为屏幕坐标 - 使用正确的API
@@ -1263,16 +1290,92 @@ let amapSuggestionAbortController = null;
 let amapCurrentSuggestions = [];
 let amapActiveSuggestionIndex = -1;
 
-// 自定义高德地图大头针图标（使用原生CSS无依赖渲染）
+// 常见问题悬浮窗控制逻辑
+const faqModalBtn = document.getElementById('faqModalBtn');
+const faqModal = document.getElementById('faqModal');
+const closeFaqModalBtn = document.getElementById('closeFaqModalBtn');
+const faqModalBody = document.getElementById('faqModalBody');
+let faqLoadedFromFile = false;
+
+async function openFaqModal() {
+    if (!faqModal) return;
+    faqModal.style.display = 'flex';
+
+    // 异步从 faqs.html 同步最新常见问题内容
+    if (!faqLoadedFromFile && faqModalBody) {
+        try {
+            const resp = await fetch('faqs.html');
+            if (resp.ok) {
+                const htmlText = await resp.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
+                const items = doc.querySelectorAll('.faq-item');
+                if (items && items.length > 0) {
+                    faqModalBody.innerHTML = '';
+                    items.forEach((item, index) => {
+                        const qEl = item.querySelector('.faq-question');
+                        const aEl = item.querySelector('.faq-answer');
+                        const wrapper = document.createElement('div');
+                        wrapper.style.cssText = `margin-bottom: ${index === items.length - 1 ? '8px' : '16px'}; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;`;
+
+                        if (qEl) {
+                            const qDiv = document.createElement('div');
+                            qDiv.style.cssText = 'font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;';
+                            qDiv.textContent = qEl.textContent;
+                            wrapper.appendChild(qDiv);
+                        }
+                        if (aEl) {
+                            const aDiv = document.createElement('div');
+                            aDiv.style.cssText = 'line-height: 1.6; font-size: 14px; color: #444;';
+                            aDiv.innerHTML = aEl.innerHTML;
+                            aDiv.querySelectorAll('p').forEach(p => {
+                                p.style.margin = '4px 0';
+                            });
+                            wrapper.appendChild(aDiv);
+                        }
+                        faqModalBody.appendChild(wrapper);
+                    });
+                    faqLoadedFromFile = true;
+                }
+            }
+        } catch (e) {
+            console.warn('读取 faqs.html 失败，使用内置常见问题内容:', e);
+        }
+    }
+}
+
+function closeFaqModal() {
+    if (!faqModal) return;
+    faqModal.style.display = 'none';
+}
+
+if (faqModalBtn) {
+    faqModalBtn.addEventListener('click', openFaqModal);
+}
+if (closeFaqModalBtn) {
+    closeFaqModalBtn.addEventListener('click', closeFaqModal);
+}
+if (faqModal) {
+    faqModal.addEventListener('click', function(event) {
+        if (event.target === faqModal) {
+            closeFaqModal();
+        }
+    });
+}
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && faqModal && faqModal.style.display === 'flex') {
+        closeFaqModal();
+    }
+});
+
+// 自定义高德地图红色头大头针图标（针尖精准对齐拾取坐标）
 const customPhotoPin = (typeof L !== 'undefined') ? L.divIcon({
     className: 'amap-custom-pin-marker',
-    html: `<div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center; pointer-events:none;">
-             <div style="width:22px; height:22px; background:#ef4444; border:2.5px solid #ffffff; border-radius:50%; box-shadow:0 3px 8px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:bold;">📷</div>
-             <div style="position:absolute; width:9px; height:9px; background:#ef4444; transform:rotate(45deg); bottom:4px; z-index:-1;"></div>
-             <div style="position:absolute; width:14px; height:5px; background:rgba(0,0,0,0.35); border-radius:50%; bottom:0; filter:blur(1px); z-index:-2;"></div>
+    html: `<div style="position:relative; width:32px; height:40px; pointer-events:none; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.35));">
+             ${RED_PUSHPIN_SVG}
            </div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 32]
+    iconSize: [32, 40],
+    iconAnchor: [16, 38]
 }) : null;
 
 // 设置当前拾取坐标，并即时同步换算与界面更新

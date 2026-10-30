@@ -43,6 +43,30 @@ const selectedLongitude = document.getElementById('selectedLongitude');
 const selectedLatitude = document.getElementById('selectedLatitude');
 const confirmSelectionBtn = document.getElementById('confirmSelectionBtn');
 
+// 地景数据下载状态底部居中单行小字指示器相关元素与状态
+const sceneryLoadingIndicator = document.getElementById('sceneryLoadingIndicator');
+
+const sceneryLoadState = {
+    active: false,
+    isFlying: false,
+    flyStartTime: 0,
+    landedTime: 0,
+    lastQueuedCount: 0,
+    completedTiles: 0,
+    displayedPercent: 0,
+    stableZeroStartTime: 0,
+    hideTimer: null,
+    fadeTimer: null,
+    listenersAttached: false,
+    avgTileBytes: 24 * 1024, // 单个压缩地形/影像瓦片真实均值约 24KB (256x256 JPEG / quantized-mesh)
+    actualDownloadedBytes: 0,
+    observedRealBytes: 0,
+    observedRealCount: 0,
+    byteSamples: [], // 滑动时间窗 [{ time, bytes }] 用于计算真实网络吞吐率
+    smoothedSpeedMBps: 0,
+    resourceCursor: 0
+};
+
 // 相机控制相关元素
 const controls = document.getElementById('controls');
 const timeControls = document.getElementById('timeControls');
@@ -282,6 +306,253 @@ function addSelectionMarker(position) {
     });
 }
 
+// 采集新增网络资源字节数（仅统计真实网络传输体积，严禁使用解压后内存体积或倍率外推）
+function collectNewSceneryResourceBytes() {
+    if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') return 0;
+    const entries = performance.getEntriesByType('resource');
+    const now = performance.now();
+    let newlyCompletedCount = 0;
+
+    for (let i = sceneryLoadState.resourceCursor; i < entries.length; i++) {
+        const entry = entries[i];
+        const realBytes = entry.encodedBodySize > 0
+            ? entry.encodedBodySize
+            : (entry.transferSize > 0 ? entry.transferSize : 0);
+
+        let entryBytes = 0;
+        if (realBytes > 0) {
+            entryBytes = realBytes;
+            const clampedTileBytes = Math.max(8 * 1024, Math.min(80 * 1024, realBytes));
+            sceneryLoadState.observedRealBytes += clampedTileBytes;
+            sceneryLoadState.observedRealCount += 1;
+            sceneryLoadState.avgTileBytes = Math.round(
+                sceneryLoadState.observedRealBytes / sceneryLoadState.observedRealCount
+            );
+        } else {
+            entryBytes = sceneryLoadState.avgTileBytes;
+        }
+
+        sceneryLoadState.actualDownloadedBytes += entryBytes;
+        sceneryLoadState.completedTiles += 1;
+        sceneryLoadState.byteSamples.push({ time: now, bytes: entryBytes });
+        newlyCompletedCount += 1;
+    }
+
+    sceneryLoadState.resourceCursor = entries.length;
+    return newlyCompletedCount;
+}
+
+// 格式化 MB 数值：小于 10MB 显示两位小数（如 0.48MB），大于等于 10MB 显示一位小数
+function formatSceneryMB(val) {
+    return val < 10 ? val.toFixed(2) : val.toFixed(1);
+}
+
+// 更新底部居中地景数据下载状态单行小文字：
+// 格式：“正在下载地景数据 - xxMB/xxMB (xx%) - xxMB/s ETA mm:ss”
+function updateSceneryLoadingUI(forceComplete = false) {
+    collectNewSceneryResourceBytes();
+
+    const now = performance.now();
+    const downloadedMB = sceneryLoadState.actualDownloadedBytes / (1024 * 1024);
+
+    let remainingTiles = sceneryLoadState.lastQueuedCount;
+    if (!forceComplete) {
+        if (sceneryLoadState.isFlying) {
+            remainingTiles = Math.max(remainingTiles, 16);
+        } else if (now - sceneryLoadState.landedTime < 450 && remainingTiles === 0 && sceneryLoadState.completedTiles === 0) {
+            remainingTiles = 8;
+        }
+    } else {
+        remainingTiles = 0;
+    }
+
+    const remainingMB = (remainingTiles * sceneryLoadState.avgTileBytes) / (1024 * 1024);
+    const totalMB = forceComplete ? downloadedMB : (downloadedMB + remainingMB);
+
+    let clampedPercent = 0;
+    if (forceComplete) {
+        clampedPercent = 100;
+    } else if (totalMB > 0.0001) {
+        const rawPercent = Math.round((downloadedMB / totalMB) * 100);
+        if (sceneryLoadState.isFlying) {
+            clampedPercent = Math.min(85, Math.max(0, rawPercent));
+        } else if (remainingTiles > 0) {
+            clampedPercent = Math.min(99, Math.max(0, rawPercent));
+        } else {
+            clampedPercent = Math.min(99, Math.max(sceneryLoadState.displayedPercent, rawPercent));
+        }
+    }
+    sceneryLoadState.displayedPercent = clampedPercent;
+
+    const windowMs = 1500;
+    while (sceneryLoadState.byteSamples.length > 0 && (now - sceneryLoadState.byteSamples[0].time) > windowMs) {
+        sceneryLoadState.byteSamples.shift();
+    }
+
+    let windowBytes = 0;
+    for (let i = 0; i < sceneryLoadState.byteSamples.length; i++) {
+        windowBytes += sceneryLoadState.byteSamples[i].bytes;
+    }
+
+    const elapsedSec = Math.max(0.25, Math.min(windowMs / 1000, (now - sceneryLoadState.flyStartTime) / 1000));
+    const measuredSpeedMBps = (windowBytes / (1024 * 1024)) / elapsedSec;
+
+    if (sceneryLoadState.smoothedSpeedMBps <= 0.001) {
+        sceneryLoadState.smoothedSpeedMBps = measuredSpeedMBps;
+    } else {
+        sceneryLoadState.smoothedSpeedMBps = sceneryLoadState.smoothedSpeedMBps * 0.6 + measuredSpeedMBps * 0.4;
+    }
+
+    const displaySpeed = Math.max(0, sceneryLoadState.smoothedSpeedMBps);
+    const speedForEta = displaySpeed > 0.05 ? displaySpeed : 0.35;
+    const etaTotalSeconds = (forceComplete || remainingMB <= 0.005)
+        ? 0
+        : Math.max(1, Math.min(3599, Math.ceil(remainingMB / speedForEta)));
+    const etaMin = String(Math.floor(etaTotalSeconds / 60)).padStart(2, '0');
+    const etaSec = String(etaTotalSeconds % 60).padStart(2, '0');
+
+    if (sceneryLoadingIndicator) {
+        sceneryLoadingIndicator.textContent = `正在下载地景数据 - ${formatSceneryMB(downloadedMB)}MB/${formatSceneryMB(totalMB)}MB (${clampedPercent}%) - ${formatSceneryMB(displaySpeed)}MB/s ETA ${etaMin}:${etaSec}`;
+    }
+}
+
+// 完成地景加载并平滑隐藏指示器
+function completeSceneryLoadingMonitor() {
+    if (!sceneryLoadState.active) return;
+    sceneryLoadState.active = false;
+    sceneryLoadState.stableZeroStartTime = 0;
+    updateSceneryLoadingUI(true);
+
+    if (sceneryLoadState.hideTimer) clearTimeout(sceneryLoadState.hideTimer);
+    if (sceneryLoadState.fadeTimer) clearTimeout(sceneryLoadState.fadeTimer);
+
+    sceneryLoadState.hideTimer = setTimeout(() => {
+        if (sceneryLoadingIndicator) {
+            sceneryLoadingIndicator.style.opacity = '0';
+        }
+        sceneryLoadState.fadeTimer = setTimeout(() => {
+            if (sceneryLoadingIndicator && !sceneryLoadState.active) {
+                sceneryLoadingIndicator.style.display = 'none';
+            }
+        }, 260);
+    }, 220);
+}
+
+// 根据真实瓦片队列计算并刷新加载百分比与下载速率指标
+function recalculateSceneryProgress() {
+    if (!sceneryLoadState.active) return;
+    updateSceneryLoadingUI(false);
+}
+
+// 绑定 Cesium 瓦片加载进度与帧渲染监听（仅绑定一次）
+function ensureSceneryLoadingListeners() {
+    if (sceneryLoadState.listenersAttached) return;
+    sceneryLoadState.listenersAttached = true;
+
+    if (typeof performance !== 'undefined' && typeof performance.setResourceTimingBufferSize === 'function') {
+        try {
+            performance.setResourceTimingBufferSize(2000);
+        } catch (e) {}
+    }
+
+    viewer.scene.globe.tileLoadProgressEvent.addEventListener(function(queuedTileCount) {
+        if (!isSelectionMode && !sceneryLoadState.active && queuedTileCount >= 4) {
+            startSceneryLoadingMonitor(false, queuedTileCount);
+            return;
+        }
+
+        if (!sceneryLoadState.active) {
+            sceneryLoadState.lastQueuedCount = queuedTileCount;
+            return;
+        }
+
+        const newlyRecorded = collectNewSceneryResourceBytes();
+
+        if (!sceneryLoadState.isFlying && newlyRecorded === 0 && queuedTileCount < sceneryLoadState.lastQueuedCount) {
+            const delta = sceneryLoadState.lastQueuedCount - queuedTileCount;
+            if (delta <= 3) {
+                const fallbackBytes = delta * sceneryLoadState.avgTileBytes;
+                sceneryLoadState.actualDownloadedBytes += fallbackBytes;
+                sceneryLoadState.completedTiles += delta;
+                sceneryLoadState.byteSamples.push({ time: performance.now(), bytes: fallbackBytes });
+            }
+        }
+
+        sceneryLoadState.lastQueuedCount = queuedTileCount;
+
+        if (queuedTileCount > 0) {
+            sceneryLoadState.stableZeroStartTime = 0;
+        }
+
+        recalculateSceneryProgress();
+    });
+
+    viewer.scene.postRender.addEventListener(function() {
+        if (!sceneryLoadState.active) return;
+
+        if (sceneryLoadState.isFlying) {
+            recalculateSceneryProgress();
+            return;
+        }
+
+        const now = performance.now();
+        if (now - sceneryLoadState.landedTime < 450) {
+            recalculateSceneryProgress();
+            return;
+        }
+
+        const allLoaded = viewer.scene.globe.tilesLoaded && sceneryLoadState.lastQueuedCount === 0;
+        if (allLoaded) {
+            if (sceneryLoadState.stableZeroStartTime === 0) {
+                sceneryLoadState.stableZeroStartTime = now;
+                recalculateSceneryProgress();
+            } else if (now - sceneryLoadState.stableZeroStartTime >= 380) {
+                completeSceneryLoadingMonitor();
+            }
+        } else {
+            sceneryLoadState.stableZeroStartTime = 0;
+            recalculateSceneryProgress();
+        }
+    });
+}
+
+// 启动地景数据下载监控并在底部正中央显示单行小字指示器
+function startSceneryLoadingMonitor(isFlying = true, initialQueued = 0) {
+    ensureSceneryLoadingListeners();
+
+    if (sceneryLoadState.hideTimer) {
+        clearTimeout(sceneryLoadState.hideTimer);
+        sceneryLoadState.hideTimer = null;
+    }
+    if (sceneryLoadState.fadeTimer) {
+        clearTimeout(sceneryLoadState.fadeTimer);
+        sceneryLoadState.fadeTimer = null;
+    }
+
+    const now = performance.now();
+    sceneryLoadState.active = true;
+    sceneryLoadState.isFlying = isFlying;
+    sceneryLoadState.flyStartTime = now;
+    sceneryLoadState.landedTime = isFlying ? 0 : now;
+    sceneryLoadState.lastQueuedCount = initialQueued;
+    sceneryLoadState.completedTiles = 0;
+    sceneryLoadState.displayedPercent = 0;
+    sceneryLoadState.stableZeroStartTime = 0;
+    sceneryLoadState.actualDownloadedBytes = 0;
+    sceneryLoadState.byteSamples = [];
+    sceneryLoadState.smoothedSpeedMBps = 0;
+    sceneryLoadState.resourceCursor = (typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function')
+        ? performance.getEntriesByType('resource').length
+        : 0;
+
+    updateSceneryLoadingUI(false);
+
+    if (sceneryLoadingIndicator) {
+        sceneryLoadingIndicator.style.display = 'block';
+        sceneryLoadingIndicator.style.opacity = '1';
+    }
+}
+
 // 开始相机模式
 async function startCameraMode(position) {
     console.log("开始相机模式...");
@@ -303,6 +574,9 @@ async function startCameraMode(position) {
     
     // 隐藏选点提示框
     mapSelectionOverlay.style.display = 'none';
+
+    // 启动地景信息下载真实进度监控指示器
+    startSceneryLoadingMonitor(true);
     
     // 获取选中点的地理坐标
     const cartographic = Cesium.Cartographic.fromCartesian(position);
@@ -339,6 +613,10 @@ async function startCameraMode(position) {
         duration: 2.0, // 缩短至2秒，起飞与降落干脆利落
         easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
         complete: function() {
+            sceneryLoadState.isFlying = false;
+            sceneryLoadState.landedTime = performance.now();
+            sceneryLoadState.stableZeroStartTime = 0;
+
             // 落地瞬间立即展示并激活操作控件，绝不等待任何异步网络 I/O，消除二次卡死
             showCameraControls();
             initializeCameraControls();
@@ -350,11 +628,17 @@ async function startCameraMode(position) {
                     if (detailedHeight !== null && !isNaN(detailedHeight) && Math.abs(detailedHeight - baseTerrainHeight) > 1) {
                         baseTerrainHeight = detailedHeight;
                         adjustHeight(currentHeight || 25);
+                        sceneryLoadState.stableZeroStartTime = 0;
                     }
                 }).catch(() => {});
             }
             
             console.log("已进入相机模式");
+        },
+        cancel: function() {
+            sceneryLoadState.isFlying = false;
+            sceneryLoadState.landedTime = performance.now();
+            sceneryLoadState.stableZeroStartTime = 0;
         }
     });
 }

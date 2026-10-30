@@ -622,11 +622,39 @@
         .cesium-viewer-cesiumWidgetContainer {
             touch-action: none !important;
         }
+
+        /* 地景数据下载状态底部居中单行小字指示器（移动端适配，位于 3D 视窗底部时间线上方居中） */
+        #sceneryLoadingIndicator {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 35, 45, 0.72);
+            color: rgba(255, 255, 255, 0.95);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 10.5px;
+            font-weight: 500;
+            line-height: 1.35;
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+            z-index: 1400;
+            display: none;
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.25s ease;
+        }
     </style>
 </head>
 <body>
     <!-- 上部地球显示区域 -->
-    <div id="cesiumContainer"></div>
+    <div id="cesiumContainer">
+        <!-- 地景数据下载状态底部居中单行小字指示器 -->
+        <div id="sceneryLoadingIndicator" style="display: none;">正在下载地景数据 - 0.0MB/0.0MB (0%) - 0.0MB/s ETA 00:00</div>
+    </div>
     
     <!-- 下部控制区域 -->
     <div id="controlPanel">

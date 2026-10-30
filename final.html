@@ -430,10 +430,67 @@
             background: rgba(240, 240, 240, 0.95);
         }
         
-        /* 时间控制 - 移动到屏幕正上方 */
+        /* 顶部居中对称圆角方形工具栏按钮 */
+        #topToolbar {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            z-index: 1500;
+            user-select: none;
+        }
+
+        .top-toolbar-btn {
+            width: 31px;
+            height: 31px;
+            border-radius: 4px;
+            background: rgba(55, 60, 70, 0.78);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            border: 1.5px solid rgba(255, 255, 255, 0.78);
+            color: rgba(255, 255, 255, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            box-shadow: none;
+            transition: all 0.18s ease;
+            outline: none;
+        }
+
+        .top-toolbar-btn:hover {
+            background: rgba(75, 82, 95, 0.85);
+            border-color: #ffffff;
+            transform: translateY(-1px);
+            box-shadow: none;
+        }
+
+        .top-toolbar-btn:active {
+            transform: translateY(0);
+        }
+
+        .top-toolbar-btn.active {
+            background: rgba(35, 40, 50, 0.92);
+            border-color: #ffffff;
+            box-shadow: none;
+        }
+
+        .top-toolbar-btn svg {
+            width: 17px;
+            height: 17px;
+            display: block;
+            pointer-events: none;
+        }
+
+        /* 时间控制 - 默认放置在顶部图标栏下方，避免与顶部图标冲突 */
         #timeControls {
             position: absolute;
-            top: 10px;
+            top: 52px;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(255, 255, 255, 0.95);
@@ -729,6 +786,8 @@
             background: rgba(255, 0, 0, 0.9);
         }
 
+        .hidden-mode #topToolbar,
+        .hidden-mode #sceneryLoadingIndicator,
         .hidden-mode #controls,
         .hidden-mode #timeControls,
         .hidden-mode #cameraInfo,
@@ -738,6 +797,31 @@
         .hidden-mode #heightSliderContainer,
         .hidden-mode #mapSelectionOverlay {
             display: none !important;
+        }
+
+        /* 地景数据下载状态底部居中单行小字指示器（位于底部时间线 27px 与高度滑块 60px 之间，互不遮挡冲突） */
+        #sceneryLoadingIndicator {
+            position: absolute;
+            bottom: 34px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 35, 45, 0.72);
+            color: rgba(255, 255, 255, 0.95);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 2px 10px;
+            border-radius: 4px;
+            white-space: nowrap;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+            z-index: 1400;
+            display: none;
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.25s ease;
         }
 
         /* 高德地图坐标拾取器弹窗 */
@@ -1377,6 +1461,42 @@
         </div>
     </div>
     
+    <!-- 顶部居中对称圆角方形按钮栏：相机控制、时钟控制、坐标位置、隐藏GUI -->
+    <div id="topToolbar" style="display: none;">
+        <!-- 1. 相机控制 (图标: 相机) -->
+        <button id="topBtnCamera" class="top-toolbar-btn" title="相机控制" aria-label="相机控制">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+        </button>
+        <!-- 2. 时钟控制 (图标: 时钟) -->
+        <button id="topBtnClock" class="top-toolbar-btn" title="时钟控制" aria-label="时钟控制">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9.5"></circle>
+                <polyline points="12 7 12 12 15.5 14"></polyline>
+            </svg>
+        </button>
+        <!-- 3. 坐标位置 (图标: 大头针) -->
+        <button id="topBtnCoord" class="top-toolbar-btn" title="坐标位置" aria-label="坐标位置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="7.5" r="4.5"></circle>
+                <path d="M12 12v9"></path>
+                <circle cx="10.5" cy="6" r="1" fill="currentColor" stroke="none"></circle>
+            </svg>
+        </button>
+        <!-- 4. 隐藏GUI (图标: 眼睛) -->
+        <button id="topBtnHideGUI" class="top-toolbar-btn" title="隐藏GUI" aria-label="隐藏GUI">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"></path>
+                <circle cx="12" cy="12" r="3.2"></circle>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 地景数据下载状态底部居中单行小字指示器 -->
+    <div id="sceneryLoadingIndicator" style="display: none;">正在下载地景数据 - 0.0MB/0.0MB (0%) - 0.0MB/s ETA 00:00</div>
+
     <div id="controls" style="display: none;">
         <h3>相机控制菜单</h3>
         

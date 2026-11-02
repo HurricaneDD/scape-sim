@@ -30,8 +30,12 @@ viewer.scene.sun.glowFactor = 5.0;
 // 全局变量
 let isSelectionMode = true; // 初始为选点模式
 let selectedPosition = null; // 存储选中的位置
+let selectedCartographic = null; // 存储选中点的地理坐标 (弧度)
 let selectionMarker = null; // 选择点标记
-let baseTerrainHeight = 0; // 存储地表基础高度
+let baseTerrainHeight = 0; // 存储选取点地表 WGS84 椭球基础高度 (米)
+let hasValidTerrainHeight = false; // 是否已获取到真实三维地形高度
+let isBaseTerrainDetailed = false; // 是否已完成最高精度地形采样 (sampleTerrainMostDetailed)
+let demApiSeaLevelHeight = null; // 外部 30m DEM 接口返回的海平面正高 (海拔，米)
 let terrainInitPromise = null; // 3D地形预加载Promise
 let preloadedTerrainPromise = null; // 选点位置的高精度地形采样Promise
 let preloadedTerrainHeight = null; // 选点位置已估算/预采样的地形高度
@@ -78,9 +82,39 @@ let amapWgsCoord = null;
 // 顶部居中工具栏与相机控制相关元素
 const topToolbar = document.getElementById('topToolbar');
 const topBtnCamera = document.getElementById('topBtnCamera');
+const topBtnWeather = document.getElementById('topBtnWeather');
 const topBtnClock = document.getElementById('topBtnClock');
 const topBtnCoord = document.getElementById('topBtnCoord');
 const topBtnHideGUI = document.getElementById('topBtnHideGUI');
+
+// 左上角圆形高德小地图相关元素与状态变量
+const miniMapWrapper = document.getElementById('miniMapWrapper');
+const miniMapLeafletEl = document.getElementById('miniMapLeaflet');
+const miniMapNorthOrbit = document.getElementById('miniMapNorthOrbit');
+const miniMapNorthLabel = document.getElementById('miniMapNorthLabel');
+const miniMapCardinalLabels = document.querySelectorAll('.mini-map-cardinal-label');
+const miniMapLayerToggleBtn = document.getElementById('miniMapLayerToggleBtn');
+let miniMap = null;
+let miniMapVectorLayer = null;
+let miniMapSatLayer = null;
+let miniMapRoadLabelLayer = null;
+let miniMapLayerMode = 'vector'; // 'vector' (高德矢量+地形底图+注记) | 'satellite' (高德卫星+路网注记)
+let lastMiniMapGcjLng = null;
+let lastMiniMapGcjLat = null;
+let cameraControlsInitialized = false;
+
+// 首次飞入预览点时屏幕中央“地形加载中...”提示框相关元素与状态
+const terrainOutlineLoadingPrompt = document.getElementById('terrainOutlineLoadingPrompt');
+const visitedPreviewPoints = new Set();
+const terrainOutlineState = {
+    active: false,
+    isFlying: false,
+    targetCartographic: null,
+    pointKey: null,
+    landedTime: 0,
+    hideTimer: null,
+    fadeTimer: null
+};
 
 // 地景数据下载状态底部居中单行小字指示器相关元素与状态
 const sceneryLoadingIndicator = document.getElementById('sceneryLoadingIndicator');
@@ -124,6 +158,7 @@ const btnZoom1x = document.getElementById('btnZoom1x');
 const btnZoom05x = document.getElementById('btnZoom05x');
 const terrainLightingSwitch = document.getElementById('terrainLightingSwitch');
 const heightSlider = document.getElementById('heightSlider');
+const altitudeValue = document.getElementById('altitudeValue');
 const heightValue = document.getElementById('heightValue');
 
 // 环境参数菜单相关元素
@@ -270,8 +305,9 @@ function setupMapSelection() {
             const longitude = Cesium.Math.toDegrees(cartographic.longitude);
             const latitude = Cesium.Math.toDegrees(cartographic.latitude);
             
-            // 存储选中位置
+            // 存储选中位置与地理坐标
             selectedPosition = intersection;
+            selectedCartographic = Cesium.Cartographic.clone(cartographic);
             
             // 更新显示信息（只显示经纬度，不显示海拔）
             selectedLongitude.textContent = longitude.toFixed(6) + '°';
@@ -283,35 +319,8 @@ function setupMapSelection() {
             // 添加或更新选择点标记
             addSelectionMarker(intersection);
             
-            // 优先获取当前已有瓦片高程，若不可用则使用射线拾取高程
-            const globeHeight = viewer.scene.globe.getHeight(cartographic);
-            const estimatedHeight = (typeof globeHeight === 'number' && !isNaN(globeHeight)) 
-                ? globeHeight 
-                : ((cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0);
-            preloadedTerrainHeight = estimatedHeight;
-            
-            // 记录版本号防止多次选点请求竞态覆盖
-            const currentSelectionId = ++selectionCounter;
-            
-            // 立即在后台触发最高精度高程预采样，在用户挪动鼠标去点击确认按钮的时间内完成
-            preloadedTerrainPromise = (async () => {
-                try {
-                    await initializeTerrain();
-                    if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
-                        const terrainSample = await Cesium.sampleTerrainMostDetailed(
-                            viewer.terrainProvider, 
-                            [cartographic]
-                        );
-                        if (currentSelectionId === selectionCounter && terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
-                            preloadedTerrainHeight = terrainSample[0].height;
-                            return terrainSample[0].height;
-                        }
-                    }
-                } catch (e) {
-                    console.log("后台预采样高精度地形高度失败，将采用拾取高度:", e);
-                }
-                return estimatedHeight;
-            })();
+            // 触发选点地表高程与海平面海拔采样
+            sampleSelectedPointElevation(cartographic);
             
             console.log(`选中位置: 经度 ${longitude.toFixed(6)}°, 纬度 ${latitude.toFixed(6)}°`);
         }
@@ -542,6 +551,119 @@ function recalculateSceneryProgress() {
     updateSceneryLoadingUI(false);
 }
 
+// 检测目标预览点的大体地形轮廓（三维地形网格）是否已在场景中加载出来
+function isTerrainOutlineLoaded(targetCartographic) {
+    if (!targetCartographic) return false;
+
+    // 1. 检查 3D 地形提供者是否已就绪（不能是初始的纯平滑圆球 EllipsoidTerrainProvider）
+    if (!viewer.terrainProvider || (viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+        return false;
+    }
+
+    // 2. 通过 globe.getHeight 检测目标经纬度处的四叉树地表网格是否已生成高程数据
+    // 当目标区域的地形瓦片尚未构建出顶点网格时，globe.getHeight 会返回 undefined
+    const globeHeight = viewer.scene.globe.getHeight(targetCartographic);
+    if (typeof globeHeight !== 'number' || isNaN(globeHeight)) {
+        return false;
+    }
+
+    // 若后台高精度采样已知该点海拔显著非零（如高山/高原），确保当前渲染出的高度已脱离 0m 椭球基准
+    if (preloadedTerrainHeight !== null && !isNaN(preloadedTerrainHeight) && Math.abs(preloadedTerrainHeight) > 10) {
+        if (Math.abs(globeHeight) < 0.05) {
+            return false;
+        }
+    }
+
+    // 3. 检查当前渲染队列（_surface._tilesToRender）中覆盖目标点或视锥的地形瓦片层级是否已达到局部地形轮廓层级（level >= 7）
+    const surface = viewer.scene.globe._surface;
+    const tilesToRender = (surface && surface._tilesToRender) ? surface._tilesToRender : [];
+    let hasLocalOutlineTile = false;
+    for (let i = 0; i < tilesToRender.length; i++) {
+        const tile = tilesToRender[i];
+        if (tile && tile.level >= 7 && tile.data && tile.data.vertexArray) {
+            if (!tile.rectangle || Cesium.Rectangle.contains(tile.rectangle, targetCartographic)) {
+                hasLocalOutlineTile = true;
+                break;
+            }
+        }
+    }
+
+    if (hasLocalOutlineTile) {
+        return true;
+    }
+
+    // 兜底：若已落地且当前视角所有四叉树瓦片均已加载完成（例如平坦海面或低层级区域），同样视为地形轮廓已就绪
+    if (!terrainOutlineState.isFlying && viewer.scene.globe.tilesLoaded && sceneryLoadState.lastQueuedCount === 0) {
+        return true;
+    }
+
+    return false;
+}
+
+// 隐藏屏幕中央“地形加载中...”提示语
+function hideTerrainOutlinePrompt() {
+    if (!terrainOutlineState.active) return;
+    terrainOutlineState.active = false;
+    if (terrainOutlineState.pointKey) {
+        visitedPreviewPoints.add(terrainOutlineState.pointKey);
+    }
+
+    if (terrainOutlineState.hideTimer) clearTimeout(terrainOutlineState.hideTimer);
+    if (terrainOutlineState.fadeTimer) clearTimeout(terrainOutlineState.fadeTimer);
+
+    terrainOutlineState.hideTimer = setTimeout(() => {
+        if (terrainOutlineLoadingPrompt) {
+            terrainOutlineLoadingPrompt.style.opacity = '0';
+        }
+        terrainOutlineState.fadeTimer = setTimeout(() => {
+            if (terrainOutlineLoadingPrompt && !terrainOutlineState.active) {
+                terrainOutlineLoadingPrompt.style.display = 'none';
+            }
+        }, 250);
+    }, 120);
+}
+
+// 首次飞入某个预览点时，检测地形轮廓是否已加载好；若尚未加载好，在屏幕中央显示“地形加载中...”
+function checkAndMonitorTerrainOutline(cartographic, isFlying = true) {
+    if (!cartographic) return;
+    ensureSceneryLoadingListeners();
+
+    const lngDeg = Cesium.Math.toDegrees(cartographic.longitude);
+    const latDeg = Cesium.Math.toDegrees(cartographic.latitude);
+    const pointKey = `${lngDeg.toFixed(2)},${latDeg.toFixed(2)}`;
+
+    // 仅在首次飞入该预览点，且检测到地形轮廓尚未加载好时显示提示
+    if (visitedPreviewPoints.has(pointKey) && isTerrainOutlineLoaded(cartographic)) {
+        return;
+    }
+
+    if (isTerrainOutlineLoaded(cartographic)) {
+        visitedPreviewPoints.add(pointKey);
+        return;
+    }
+
+    if (terrainOutlineState.hideTimer) {
+        clearTimeout(terrainOutlineState.hideTimer);
+        terrainOutlineState.hideTimer = null;
+    }
+    if (terrainOutlineState.fadeTimer) {
+        clearTimeout(terrainOutlineState.fadeTimer);
+        terrainOutlineState.fadeTimer = null;
+    }
+
+    terrainOutlineState.active = true;
+    terrainOutlineState.isFlying = isFlying;
+    terrainOutlineState.targetCartographic = Cesium.Cartographic.clone(cartographic);
+    terrainOutlineState.pointKey = pointKey;
+    terrainOutlineState.landedTime = isFlying ? 0 : performance.now();
+
+    if (terrainOutlineLoadingPrompt) {
+        terrainOutlineLoadingPrompt.textContent = '地形加载中...';
+        terrainOutlineLoadingPrompt.style.display = 'block';
+        terrainOutlineLoadingPrompt.style.opacity = '1';
+    }
+}
+
 // 绑定 Cesium 瓦片加载进度与帧渲染监听（仅绑定一次）
 function ensureSceneryLoadingListeners() {
     if (sceneryLoadState.listenersAttached) return;
@@ -589,8 +711,24 @@ function ensureSceneryLoadingListeners() {
         recalculateSceneryProgress();
     });
 
-    // 每帧渲染后检查瓦片是否已全部加载完毕（含四叉树细分稳定期检测）
+    // 每帧渲染后检查瓦片是否已全部加载完毕（含四叉树细分稳定期检测与地形轮廓就绪检测）
     viewer.scene.postRender.addEventListener(function() {
+        // 检测屏幕中央“地形加载中...”提示是否已完成地形轮廓加载
+        if (terrainOutlineState.active && terrainOutlineState.targetCartographic) {
+            if (!terrainOutlineState.isFlying) {
+                const nowTerrain = performance.now();
+                if (isTerrainOutlineLoaded(terrainOutlineState.targetCartographic) || (nowTerrain - terrainOutlineState.landedTime > 10000)) {
+                    hideTerrainOutlinePrompt();
+                }
+            } else {
+                // 飞行途中若已接近目标点（相机高度低于 30km）且目标处局部地形轮廓瓦片已加载就绪，也可提前完成
+                const camCarto = viewer.camera.positionCartographic;
+                if (camCarto && camCarto.height < 30000 && isTerrainOutlineLoaded(terrainOutlineState.targetCartographic)) {
+                    hideTerrainOutlinePrompt();
+                }
+            }
+        }
+
         if (!sceneryLoadState.active) return;
 
         if (sceneryLoadState.isFlying) {
@@ -680,22 +818,34 @@ async function startCameraMode(position) {
     // 隐藏选点提示框
     mapSelectionOverlay.style.display = 'none';
 
-    // 启动地景信息下载真实进度监控指示器
-    startSceneryLoadingMonitor(true);
-    
     // 获取选中点的地理坐标
     const cartographic = Cesium.Cartographic.fromCartesian(position);
+    selectedCartographic = Cesium.Cartographic.clone(cartographic);
+
+    // 首次飞入预览点时，检测大体地形轮廓是否已加载好，未加载好则在屏幕中央显示“地形加载中...”
+    checkAndMonitorTerrainOutline(cartographic, true);
+
+    // 启动地景信息下载真实进度监控指示器
+    startSceneryLoadingMonitor(true);
     
     // 优先采用预采样得到的高程，或已有瓦片/拾取点高度（无需等待网络即可立即起飞）
     let terrainHeight = preloadedTerrainHeight;
     if (terrainHeight === null || isNaN(terrainHeight)) {
         const globeHeight = viewer.scene.globe.getHeight(cartographic);
-        terrainHeight = (typeof globeHeight === 'number' && !isNaN(globeHeight)) 
-            ? globeHeight 
-            : ((cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0);
+        if (typeof globeHeight === 'number' && !isNaN(globeHeight) && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+            terrainHeight = globeHeight;
+            hasValidTerrainHeight = true;
+        } else {
+            terrainHeight = (cartographic.height && !isNaN(cartographic.height)) ? cartographic.height : 0;
+        }
     }
     if (terrainHeight < -500) terrainHeight = 0;
     baseTerrainHeight = terrainHeight;
+
+    // 每次进入新机位时将距地面相对高度重置为默认 25m 并立即刷新两行高度文字
+    currentHeight = 25;
+    if (heightSlider) heightSlider.value = 25;
+    updateHeightDisplay(25);
     
     // 计算飞行目标位置（地面高度+25米）
     const targetHeight = terrainHeight + 25;
@@ -705,6 +855,17 @@ async function startCameraMode(position) {
         targetHeight
     );
     
+    // 进入相机模式时立即展示顶部工具栏、小地图与操作控件，并初始化控制监听（无需等2秒飞行结束）
+    showCameraControls();
+    initializeCameraControls();
+
+    // 立即将小地图中心定位到目标机位
+    const targetWgsLng = Cesium.Math.toDegrees(cartographic.longitude);
+    const targetWgsLat = Cesium.Math.toDegrees(cartographic.latitude);
+    lastMiniMapGcjLng = null;
+    lastMiniMapGcjLat = null;
+    updateMiniMap(targetWgsLng, targetWgsLat, 0);
+
     // 立即启动飞行动画：
     // 使用 QUADRATIC_IN_OUT 缓动和 2.0 秒时长，使镜头从第 1 帧起就具有清晰的飞入速度感，
     // 消除默认 EXPONENTIAL 缓动在前 1.5 秒地球看似静止未动的不良感知。
@@ -723,17 +884,26 @@ async function startCameraMode(position) {
             sceneryLoadState.landedTime = performance.now();
             sceneryLoadState.stableZeroStartTime = 0;
 
-            // 落地瞬间立即展示并激活操作控件，绝不等待任何异步网络 I/O，消除二次卡死
+            terrainOutlineState.isFlying = false;
+            terrainOutlineState.landedTime = performance.now();
+            if (terrainOutlineState.active && isTerrainOutlineLoaded(cartographic)) {
+                hideTerrainOutlinePrompt();
+            }
+
+            // 落地瞬间立即确保操作控件与小地图尺寸刷新，绝不等待任何异步网络 I/O
             showCameraControls();
             initializeCameraControls();
-            adjustHeight(25);
+            adjustHeight(currentHeight || 25);
+            updateCameraInfo();
             
             // 后台异步校准精确地表高度（若之前高精度采样稍慢完成，则无缝平滑校准）
             if (preloadedTerrainPromise) {
                 preloadedTerrainPromise.then(detailedHeight => {
-                    if (detailedHeight !== null && !isNaN(detailedHeight) && Math.abs(detailedHeight - baseTerrainHeight) > 1) {
+                    if (detailedHeight !== null && !isNaN(detailedHeight)) {
                         baseTerrainHeight = detailedHeight;
+                        hasValidTerrainHeight = true;
                         adjustHeight(currentHeight || 25);
+                        updateHeightDisplay(currentHeight || 25);
                         sceneryLoadState.stableZeroStartTime = 0;
                     }
                 }).catch(() => {});
@@ -745,19 +915,49 @@ async function startCameraMode(position) {
             sceneryLoadState.isFlying = false;
             sceneryLoadState.landedTime = performance.now();
             sceneryLoadState.stableZeroStartTime = 0;
+            terrainOutlineState.isFlying = false;
+            terrainOutlineState.landedTime = performance.now();
+            showCameraControls();
+            initializeCameraControls();
+            updateHeightDisplay();
+            updateCameraInfo();
         }
     });
 }
 
-// 显示相机控制界面（顶部图标栏显示，相机控制、时钟控制、坐标位置三张卡片默认关闭）
+// 显示相机控制界面（顶部图标栏与左上角圆形高德小地图显示，相机控制、环境与天气、时钟控制、坐标位置四张卡片默认关闭）
 function showCameraControls() {
     if (topToolbar) {
         topToolbar.style.display = 'flex';
     }
+    if (miniMapWrapper) {
+        miniMapWrapper.style.display = 'block';
+    }
+    initMiniMap();
+    if (miniMap) {
+        miniMap.invalidateSize({ animate: false });
+    }
+    setTimeout(() => {
+        if (miniMap) {
+            miniMap.invalidateSize({ animate: false });
+            lastMiniMapGcjLng = null;
+            lastMiniMapGcjLat = null;
+            updateCameraInfo();
+        }
+    }, 60);
+    setTimeout(() => {
+        if (miniMap) {
+            miniMap.invalidateSize({ animate: false });
+            updateCameraInfo();
+        }
+    }, 300);
+
     controls.style.display = 'none';
+    if (envParamsMenu) envParamsMenu.style.display = 'none';
     timeControls.style.display = 'none';
     cameraInfo.style.display = 'none';
     if (topBtnCamera) topBtnCamera.classList.remove('active');
+    if (topBtnWeather) topBtnWeather.classList.remove('active');
     if (topBtnClock) topBtnClock.classList.remove('active');
     if (topBtnCoord) topBtnCoord.classList.remove('active');
 
@@ -837,33 +1037,248 @@ function applyZoom(zoomFactor) {
     zoomSlider.value = zoomFactor;
 }
 
-// 调整相机高度
-async function adjustHeight(height) {
+// =========================================================================
+// 海平面高度（海拔 / 正高 H）与相对高度计算模块
+// Cesium World Terrain 的高程基准为 WGS84 参考椭球面（大地高 h），
+// 而现实中的海拔（距海平面高度 H）以 EGM96/EGM2008 大地水准面为基准：H = h - N。
+// 下表为覆盖中国及周边区域 (70°E~140°E, 15°N~55°N, 步长 5°) 的 EGM96 大地水准面差距 N (单位：米)，
+// 结合双线性插值可将 WGS84 椭球高转换为海平面正高（消除中国境内 10m~65m 的椭球偏差）。
+// =========================================================================
+const EGM96_CHINA_GRID = [
+    // 55°N (70°E -> 140°E, 每 5° 一格，共 15 列)
+    [-36, -39, -42, -44, -44, -40, -34, -27, -19, -11, -3,  5, 12, 18, 23],
+    // 50°N
+    [-42, -46, -49, -50, -48, -43, -36, -28, -19, -10, -2,  6, 14, 20, 26],
+    // 45°N
+    [-46, -50, -53, -54, -50, -45, -38, -29, -20, -10,  0,  8, 16, 23, 29],
+    // 40°N
+    [-48, -55, -60, -58, -52, -45, -37, -28, -18,  -9,  1, 10, 18, 26, 33],
+    // 35°N
+    [-45, -52, -57, -55, -50, -44, -38, -30, -20,  -9,  2, 11, 20, 28, 36],
+    // 30°N
+    [-42, -44, -38, -33, -35, -39, -40, -34, -24, -12,  2, 11, 20, 28, 35],
+    // 25°N
+    [-52, -53, -46, -38, -34, -35, -34, -28, -19,  -7,  6, 16, 24, 32, 39],
+    // 20°N
+    [-64, -66, -58, -48, -40, -34, -28, -20, -10,   2, 14, 24, 33, 40, 45],
+    // 15°N
+    [-75, -78, -68, -56, -44, -34, -22, -10,   2,  14, 26, 36, 44, 50, 54]
+];
+
+// 计算指定经纬度处的 EGM96 大地水准面高程异常 N (米)：N = h_WGS84 - H_MSL
+function getGeoidUndulation(lngDeg, latDeg) {
+    if (isNaN(lngDeg) || isNaN(latDeg)) return 0;
+
+    if (lngDeg >= 70 && lngDeg <= 140 && latDeg >= 15 && latDeg <= 55) {
+        const colFloat = (lngDeg - 70) / 5.0;
+        const rowFloat = (55 - latDeg) / 5.0;
+
+        const c0 = Math.max(0, Math.min(13, Math.floor(colFloat)));
+        const r0 = Math.max(0, Math.min(7, Math.floor(rowFloat)));
+        const c1 = c0 + 1;
+        const r1 = r0 + 1;
+
+        const tx = colFloat - c0;
+        const ty = rowFloat - r0;
+
+        const n00 = EGM96_CHINA_GRID[r0][c0];
+        const n10 = EGM96_CHINA_GRID[r0][c1];
+        const n01 = EGM96_CHINA_GRID[r1][c0];
+        const n11 = EGM96_CHINA_GRID[r1][c1];
+
+        const top = n00 * (1 - tx) + n10 * tx;
+        const bottom = n01 * (1 - tx) + n11 * tx;
+        return top * (1 - ty) + bottom * ty;
+    }
+
+    return 0;
+}
+
+// 触发选点位置的地表高程多级采样（本地瓦片高程 + Cesium sampleTerrainMostDetailed + 30m DEM 正高兜底）
+function sampleSelectedPointElevation(cartographic) {
+    if (!cartographic) return;
+    selectedCartographic = Cesium.Cartographic.clone(cartographic);
+
+    const lngDeg = Cesium.Math.toDegrees(cartographic.longitude);
+    const latDeg = Cesium.Math.toDegrees(cartographic.latitude);
+    const geoidN = getGeoidUndulation(lngDeg, latDeg);
+
+    // 1. 优先读取当前已加载地球瓦片的高程
+    const globeHeight = viewer.scene.globe.getHeight(cartographic);
+    const isRealTerrainProvider = viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider);
+    let estimatedHeight = 0;
+
+    if (typeof globeHeight === 'number' && !isNaN(globeHeight) && isRealTerrainProvider && Math.abs(globeHeight) > 0.05) {
+        estimatedHeight = globeHeight;
+        hasValidTerrainHeight = true;
+    } else if (cartographic.height && !isNaN(cartographic.height) && Math.abs(cartographic.height) > 0.05) {
+        estimatedHeight = cartographic.height;
+        hasValidTerrainHeight = isRealTerrainProvider;
+    } else {
+        estimatedHeight = 0;
+        hasValidTerrainHeight = false;
+    }
+
+    isBaseTerrainDetailed = false;
+    demApiSeaLevelHeight = null;
+    preloadedTerrainHeight = estimatedHeight;
+    baseTerrainHeight = estimatedHeight;
+
+    const currentSelectionId = ++selectionCounter;
+
+    // 2. 并行请求 Open-Meteo 30m SRTM/Copernicus DEM 接口获取海平面正高（作为地形瓦片尚未加载完时的快速海拔参考）
+    (async () => {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 3500);
+            const url = `https://api.open-meteo.com/v1/elevation?latitude=${latDeg.toFixed(5)}&longitude=${lngDeg.toFixed(5)}`;
+            const resp = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (currentSelectionId === selectionCounter && data && Array.isArray(data.elevation) && typeof data.elevation[0] === 'number' && !isNaN(data.elevation[0])) {
+                    demApiSeaLevelHeight = data.elevation[0];
+                    // 若此时 Cesium 3D 地形尚未采样出有效高度，先用 DEM 海拔换算为 WGS84 高度支撑机位高度
+                    if (!isBaseTerrainDetailed && !hasValidTerrainHeight) {
+                        const wgsEstimated = demApiSeaLevelHeight + geoidN;
+                        preloadedTerrainHeight = wgsEstimated;
+                        baseTerrainHeight = wgsEstimated;
+                        if (!isSelectionMode && !sceneryLoadState.isFlying) {
+                            adjustHeight(currentHeight || 25);
+                        }
+                    }
+                    updateHeightDisplay();
+                }
+            }
+        } catch (e) {
+            // 忽略网络异常，完全依赖 Cesium 自身地形高程
+        }
+    })();
+
+    // 3. 调用 Cesium sampleTerrainMostDetailed 获取最高精度三维地形网格高程
+    preloadedTerrainPromise = (async () => {
+        try {
+            await initializeTerrain();
+            if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+                const sampleCarto = Cesium.Cartographic.fromRadians(cartographic.longitude, cartographic.latitude);
+                const terrainSample = await Cesium.sampleTerrainMostDetailed(
+                    viewer.terrainProvider,
+                    [sampleCarto]
+                );
+                if (currentSelectionId === selectionCounter && terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number' && !isNaN(terrainSample[0].height)) {
+                    const detailedH = terrainSample[0].height;
+                    preloadedTerrainHeight = detailedH;
+                    baseTerrainHeight = detailedH;
+                    hasValidTerrainHeight = true;
+                    isBaseTerrainDetailed = true;
+
+                    if (!isSelectionMode) {
+                        if (!sceneryLoadState.isFlying) {
+                            adjustHeight(currentHeight || 25);
+                        }
+                        updateHeightDisplay();
+                    }
+                    return detailedH;
+                }
+            }
+        } catch (e) {
+            console.log("后台预采样高精度地形高度失败，将采用实时瓦片高程:", e);
+        }
+        return preloadedTerrainHeight || estimatedHeight;
+    })();
+}
+
+// 计算当前选取点地面的海平面海拔高度（正高 H，单位：米）
+function getSelectedGroundSeaLevelAltitude() {
+    let lngDeg = 105.0;
+    let latDeg = 36.0;
+    if (selectedCartographic) {
+        lngDeg = Cesium.Math.toDegrees(selectedCartographic.longitude);
+        latDeg = Cesium.Math.toDegrees(selectedCartographic.latitude);
+    } else if (viewer && viewer.scene && viewer.scene.camera && viewer.scene.camera.positionCartographic) {
+        lngDeg = Cesium.Math.toDegrees(viewer.scene.camera.positionCartographic.longitude);
+        latDeg = Cesium.Math.toDegrees(viewer.scene.camera.positionCartographic.latitude);
+    }
+
+    // 若已获取到最高精度三维地形高程，或外部 DEM 未返回时，使用 WGS84 地形高减去大地水准面差距 N
+    if (isBaseTerrainDetailed || (hasValidTerrainHeight && demApiSeaLevelHeight === null)) {
+        const geoidN = getGeoidUndulation(lngDeg, latDeg);
+        return baseTerrainHeight - geoidN;
+    }
+
+    // 若外部 30m DEM 海平面正高已就绪且与当前瓦片推算值接近，优先采用标准 DEM 海拔
+    if (demApiSeaLevelHeight !== null && !isNaN(demApiSeaLevelHeight)) {
+        if (!hasValidTerrainHeight) {
+            return demApiSeaLevelHeight;
+        }
+        const geoidN = getGeoidUndulation(lngDeg, latDeg);
+        const cesiumMsl = baseTerrainHeight - geoidN;
+        if (Math.abs(cesiumMsl - demApiSeaLevelHeight) <= 35) {
+            return cesiumMsl;
+        }
+        return cesiumMsl;
+    }
+
+    return baseTerrainHeight;
+}
+
+// 刷新高度调整小块中的上下两行文字：
+// 第一行：距海平面高度（海拔）：xxm
+// 第二行：距选取点地面相对高度：xxm
+function updateHeightDisplay(relativeHeightOverride = null) {
+    let relHeight = Math.round(currentHeight);
+
+    if (relativeHeightOverride !== null && !isNaN(relativeHeightOverride)) {
+        relHeight = Math.round(relativeHeightOverride);
+    } else if (!isSelectionMode && !sceneryLoadState.isFlying && viewer && viewer.scene && viewer.scene.camera) {
+        const camCarto = viewer.scene.camera.positionCartographic;
+        if (camCarto && typeof camCarto.height === 'number' && !isNaN(camCarto.height) && camCarto.height < 200000) {
+            relHeight = Math.round(camCarto.height - baseTerrainHeight);
+            currentHeight = relHeight;
+            if (heightSlider && document.activeElement !== heightSlider) {
+                const sliderClamped = Math.max(0, Math.min(500, relHeight));
+                heightSlider.value = sliderClamped;
+            }
+        }
+    }
+
+    const groundSeaLevelAltitude = Math.round(getSelectedGroundSeaLevelAltitude());
+    const cameraSeaLevelAltitude = groundSeaLevelAltitude + relHeight;
+
+    if (altitudeValue) {
+        altitudeValue.textContent = cameraSeaLevelAltitude + 'm';
+    }
+    if (heightValue) {
+        heightValue.textContent = relHeight + 'm';
+    }
+}
+
+// 调整相机高度（同步 0ms 响应，实时更新海拔与相对高度显示）
+function adjustHeight(height) {
     if (!viewer.scene.camera) return;
     
     currentHeight = height;
-    heightValue.textContent = height + 'm';
-    heightSlider.value = height;
+    if (heightSlider && Number(heightSlider.value) !== height) {
+        heightSlider.value = height;
+    }
     
     try {
         // 获取当前相机位置
         const position = viewer.scene.camera.positionWC;
         const cartographic = Cesium.Cartographic.fromCartesian(position);
+        if (!cartographic) return;
         
-        // 如果是第一次调整高度，获取地表高度
-        if (baseTerrainHeight === 0) {
-            if (viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
-                baseTerrainHeight = 0;
-            } else {
-                const terrainSample = await Cesium.sampleTerrainMostDetailed(
-                    viewer.terrainProvider, 
-                    [cartographic]
-                );
-                baseTerrainHeight = terrainSample[0].height;
+        // 若尚未获取有效地形高度，尝试从当前已加载瓦片同步读取
+        if (!hasValidTerrainHeight && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+            const targetCarto = selectedCartographic || cartographic;
+            const globeH = viewer.scene.globe.getHeight(targetCarto);
+            if (typeof globeH === 'number' && !isNaN(globeH) && Math.abs(globeH) > 0.05) {
+                baseTerrainHeight = globeH;
+                hasValidTerrainHeight = true;
             }
         }
         
-        // 计算新的高度（地表高度 + 离地高度）
+        // 计算新的高度（选取点地表 WGS84 高度 + 距选取点地面相对高度）
         const newHeight = baseTerrainHeight + height;
         
         // 设置新的相机位置，保持朝向不变
@@ -888,6 +1303,9 @@ async function adjustHeight(height) {
                 roll: roll
             }
         });
+
+        // 同步刷新第一行海拔与第二行相对高度显示
+        updateHeightDisplay(height);
     } catch (error) {
         console.log("调整高度失败:", error);
     }
@@ -931,29 +1349,193 @@ function resetCameraOrientation() {
     }
 }
 
-// 更新相机信息显示
+// 初始化左上角圆形高德小地图（支持高德矢量底图 + 高德地形/卫星纹理 + 高德中文路网地名注记，彻底解决无人山区纯矢量瓦片纯白空白问题）
+function initMiniMap(initialGcjLng = 101.8797, initialGcjLat = 29.5969) {
+    if (typeof L === 'undefined') {
+        setTimeout(() => initMiniMap(initialGcjLng, initialGcjLat), 200);
+        return;
+    }
+    if (miniMap) return;
+
+    const container = document.getElementById('miniMapLeaflet');
+    if (!container) return;
+
+    if (miniMapWrapper) {
+        miniMapWrapper.style.display = 'block';
+    }
+
+    miniMap = L.map('miniMapLeaflet', {
+        center: [initialGcjLat, initialGcjLng],
+        zoom: 13,
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        keyboard: false,
+        scrollWheelZoom: true
+    });
+
+    // 底层：高德地形/卫星实景底图 (style=6)，确保在雪山、高原等无街道区域也有清晰山脉地貌纹理
+    miniMapSatLayer = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=6&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18,
+        minZoom: 3,
+        opacity: 1.0
+    }).addTo(miniMap);
+
+    // 中层：高德标准矢量电子地图 (style=7)，半透明叠加于地形之上，兼顾城市道路水系与高山地貌
+    miniMapVectorLayer = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18,
+        minZoom: 3,
+        opacity: 0.68
+    }).addTo(miniMap);
+
+    // 顶层：高德透明路网与中文地名/山峰注记层 (style=8)
+    miniMapRoadLabelLayer = L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18,
+        minZoom: 3,
+        opacity: 1.0
+    }).addTo(miniMap);
+
+    // 绑定小地图底图模式切换按钮（高德矢量 / 高德卫星）
+    if (miniMapLayerToggleBtn && !miniMapLayerToggleBtn._bound) {
+        miniMapLayerToggleBtn._bound = true;
+        miniMapLayerToggleBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!miniMap) return;
+            if (miniMapLayerMode === 'vector') {
+                miniMapLayerMode = 'satellite';
+                if (miniMapVectorLayer) miniMapVectorLayer.setOpacity(0);
+                miniMapLayerToggleBtn.textContent = '高德卫星';
+            } else {
+                miniMapLayerMode = 'vector';
+                if (miniMapVectorLayer) miniMapVectorLayer.setOpacity(0.68);
+                miniMapLayerToggleBtn.textContent = '高德底图';
+            }
+        });
+    }
+
+    // 多次校准容器尺寸，彻底杜绝 0x0 空白瓦片问题
+    requestAnimationFrame(() => {
+        if (miniMap) miniMap.invalidateSize({ animate: false });
+    });
+    setTimeout(() => {
+        if (miniMap) miniMap.invalidateSize({ animate: false });
+    }, 150);
+    setTimeout(() => {
+        if (miniMap) miniMap.invalidateSize({ animate: false });
+    }, 500);
+}
+
+// 实时同步更新左上角圆形高德小地图：中心锁定当前相机位置（WGS-84 转 GCJ-02），摄像头指向始终朝上（底图与外圈正北 N 随方位角反向旋转）
+function updateMiniMap(wgsLng, wgsLat, headingDeg) {
+    if (!miniMapWrapper || miniMapWrapper.style.display === 'none') return;
+    if (isNaN(wgsLng) || isNaN(wgsLat)) return;
+
+    const [gcjLng, gcjLat] = (typeof CoordTransform !== 'undefined' && CoordTransform.wgs84ToGcj02)
+        ? CoordTransform.wgs84ToGcj02(wgsLng, wgsLat)
+        : [wgsLng, wgsLat];
+
+    if (!miniMap) {
+        initMiniMap(gcjLng, gcjLat);
+    }
+
+    if (miniMap) {
+        if (
+            lastMiniMapGcjLng === null ||
+            lastMiniMapGcjLat === null ||
+            Math.abs(gcjLng - lastMiniMapGcjLng) > 1e-7 ||
+            Math.abs(gcjLat - lastMiniMapGcjLat) > 1e-7
+        ) {
+            lastMiniMapGcjLng = gcjLng;
+            lastMiniMapGcjLat = gcjLat;
+            miniMap.setView([gcjLat, gcjLng], miniMap.getZoom() || 13, { animate: false });
+        }
+    }
+
+    if (!isNaN(headingDeg)) {
+        // 将相机方位角规范化到 0 ~ 360 度（0° 代表正北）
+        const normalizedHeading = ((headingDeg % 360) + 360) % 360;
+        const mapRotationDeg = -normalizedHeading;
+
+        // 旋转小地图画布使摄像头指向始终朝上（正上方 12 点钟方向即为当前镜头朝向）
+        if (miniMapLeafletEl) {
+            miniMapLeafletEl.style.transform = `rotate(${mapRotationDeg.toFixed(1)}deg)`;
+        }
+
+        // 外框外部的 N/E/S/W 刻度与黑灰色字母沿着圆周同步旋转以指示各真实方位，且字母反向自转保持正立易读
+        if (miniMapNorthOrbit) {
+            miniMapNorthOrbit.style.transform = `rotate(${mapRotationDeg.toFixed(1)}deg)`;
+        }
+        const labelTransform = `rotate(${normalizedHeading.toFixed(1)}deg)`;
+        if (miniMapCardinalLabels && miniMapCardinalLabels.length > 0) {
+            miniMapCardinalLabels.forEach(label => {
+                label.style.transform = labelTransform;
+            });
+        } else if (miniMapNorthLabel) {
+            miniMapNorthLabel.style.transform = labelTransform;
+        }
+    }
+}
+
+// 更新相机信息显示与左上角高德小地图实时姿态
 function updateCameraInfo() {
-    if (!viewer.scene.camera) return;
+    if (!viewer || !viewer.scene || !viewer.scene.camera) return;
     
     try {
         // 获取相机位置
         const position = viewer.scene.camera.positionWC;
         const cartographic = Cesium.Cartographic.fromCartesian(position);
+        if (!cartographic) return;
         
         // 转换为度
         const longitude = Cesium.Math.toDegrees(cartographic.longitude);
         const latitude = Cesium.Math.toDegrees(cartographic.latitude);
+        const cameraHeight = cartographic.height;
         
-        // 获取相机朝向
+        // 获取相机朝向（Cesium heading: 0 为正北，顺时针增加）
         const camera = viewer.scene.camera;
         const heading = Cesium.Math.toDegrees(camera.heading);
         const pitch = Cesium.Math.toDegrees(camera.pitch);
         
-        // 更新显示
-        longitudeValue.textContent = longitude.toFixed(3) + '°';
-        latitudeValue.textContent = latitude.toFixed(3) + '°';
-        headingValue.textContent = heading.toFixed(1) + '°';
-        pitchValue.textContent = pitch.toFixed(1) + '°';
+        // 更新坐标卡片数值
+        if (longitudeValue) longitudeValue.textContent = longitude.toFixed(3) + '°';
+        if (latitudeValue) latitudeValue.textContent = latitude.toFixed(3) + '°';
+        if (headingValue) headingValue.textContent = heading.toFixed(1) + '°';
+        if (pitchValue) pitchValue.textContent = pitch.toFixed(1) + '°';
+
+        // 在相机模式下，若最高精度采样尚未完成而四叉树瓦片已加载出更精确的选取点地形高程，实时平滑校准
+        if (!isSelectionMode && selectedCartographic && !isBaseTerrainDetailed && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
+            const liveGlobeH = viewer.scene.globe.getHeight(selectedCartographic);
+            if (typeof liveGlobeH === 'number' && !isNaN(liveGlobeH) && Math.abs(liveGlobeH) > 0.05) {
+                if (!hasValidTerrainHeight || Math.abs(liveGlobeH - baseTerrainHeight) > 1.5) {
+                    const prevRelative = currentHeight || 25;
+                    baseTerrainHeight = liveGlobeH;
+                    hasValidTerrainHeight = true;
+                    if (!sceneryLoadState.isFlying) {
+                        adjustHeight(prevRelative);
+                    }
+                }
+            }
+        }
+
+        // 实时同步刷新高度小块中的“距海平面高度（海拔）”与“距选取点地面相对高度”
+        if (!isSelectionMode) {
+            updateHeightDisplay();
+        }
+
+        // 当相机处于太空全局视角（海拔 > 500km）且用户已选定机位时，小地图优先展示已选机位；否则实时追踪相机当前坐标
+        if (cameraHeight > 500000 && amapWgsCoord && !isNaN(amapWgsCoord.lng) && !isNaN(amapWgsCoord.lat)) {
+            updateMiniMap(amapWgsCoord.lng, amapWgsCoord.lat, heading);
+        } else if (cameraHeight > 500000) {
+            // 初始太空视角下默认展示贡嘎雪山机位底图，避免停留在无地物特征的黄土荒原
+            updateMiniMap(101.8797, 29.5969, heading);
+        } else {
+            updateMiniMap(longitude, latitude, heading);
+        }
     } catch (error) {
         console.log("更新相机信息失败:", error);
     }
@@ -1088,12 +1670,25 @@ function closeDistanceFog() {
     console.log("距离雾已关闭");
 }
 
-// 遥感控制函数
+// 遥感控制函数（支持拖拽与按住偏转时 60fps 持续平滑旋转）
 function setupJoystick(joystickId, innerElement, callback) {
     const joystick = document.getElementById(joystickId);
     let isActive = false;
     let startPos = { x: 0, y: 0 };
     let currentPos = { x: 0, y: 0 };
+    let normPos = { x: 0, y: 0 };
+    let rafId = null;
+
+    const tickLoop = function() {
+        if (!isActive) {
+            rafId = null;
+            return;
+        }
+        if (callback && (Math.abs(normPos.x) > 0.05 || Math.abs(normPos.y) > 0.05)) {
+            callback(normPos.x, normPos.y);
+        }
+        rafId = requestAnimationFrame(tickLoop);
+    };
     
     // 开始控制
     const startControl = function(clientX, clientY) {
@@ -1103,6 +1698,11 @@ function setupJoystick(joystickId, innerElement, callback) {
         startPos.y = clientY - rect.top;
         currentPos.x = 0;
         currentPos.y = 0;
+        normPos.x = 0;
+        normPos.y = 0;
+        if (!rafId) {
+            rafId = requestAnimationFrame(tickLoop);
+        }
     };
     
     // 更新控制
@@ -1123,22 +1723,25 @@ function setupJoystick(joystickId, innerElement, callback) {
         
         currentPos.x = deltaX * ratio;
         currentPos.y = deltaY * ratio;
+        normPos.x = currentPos.x / maxDistance;
+        normPos.y = currentPos.y / maxDistance;
         
         // 更新遥感内圈位置
         innerElement.style.transform = `translate(calc(-50% + ${currentPos.x}px), calc(-50% + ${currentPos.y}px))`;
-        
-        // 回调函数处理移动
-        if (callback) {
-            callback(currentPos.x / maxDistance, currentPos.y / maxDistance);
-        }
     };
     
     // 结束控制
     const endControl = function() {
         if (!isActive) return;
         isActive = false;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
         currentPos.x = 0;
         currentPos.y = 0;
+        normPos.x = 0;
+        normPos.y = 0;
         innerElement.style.transform = 'translate(-50%, -50%)';
         if (callback) {
             callback(0, 0); // 停止移动
@@ -1176,33 +1779,45 @@ function setupJoystick(joystickId, innerElement, callback) {
 
 // 初始化相机控制
 function initializeCameraControls() {
-    // 右遥感控制 - 镜头朝向
+    // 始终确保第一人称相机控制器的鼠标交互约束生效
+    viewer.scene.screenSpaceCameraController.enableRotate = false; // 禁用旋转
+    viewer.scene.screenSpaceCameraController.enableTranslate = false;
+    viewer.scene.screenSpaceCameraController.enableZoom = false; // 禁用滚轮缩放
+    viewer.scene.screenSpaceCameraController.enableTilt = false;
+    viewer.scene.screenSpaceCameraController.enableLook = false;
+    viewer.scene.screenSpaceCameraController.translateEventTypes = [
+        Cesium.CameraEventType.RIGHT_DRAG
+    ];
+
+    // 防止多次进入机位时重复绑定 DOM 监听与定时器
+    if (cameraControlsInitialized) {
+        return;
+    }
+    cameraControlsInitialized = true;
+
+    // 右遥感控制 - 镜头朝向（仅更改相机偏航角 heading 和俯仰角 pitch，滚转角 roll 始终锁定为 0 度）
     setupJoystick('rightJoystick', rightJoystickInner, function(x, y) {
         if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) return;
         
-        const rotateSpeed = 0.005;
-        
-        // 左右旋转
-        if (Math.abs(x) > 0.1) {
-            if (x > 0.1) {
-                // 向右旋转
-                viewer.camera.lookRight(x * rotateSpeed);
-            } else if (x < -0.1) {
-                // 向左旋转
-                viewer.camera.lookLeft(-x * rotateSpeed);
+        const rotateSpeed = 0.02;
+        const deltaHeading = Math.abs(x) > 0.1 ? x * rotateSpeed : 0;
+        const deltaPitch = Math.abs(y) > 0.1 ? -y * rotateSpeed : 0;
+
+        const newHeading = viewer.camera.heading + deltaHeading;
+        const newPitch = Cesium.Math.clamp(
+            viewer.camera.pitch + deltaPitch,
+            -Cesium.Math.PI_OVER_TWO + 0.01,
+            Cesium.Math.PI_OVER_TWO - 0.01
+        );
+
+        viewer.camera.setView({
+            destination: viewer.camera.positionWC,
+            orientation: {
+                heading: newHeading,
+                pitch: newPitch,
+                roll: 0.0
             }
-        }
-        
-        // 上下俯仰：反转Y轴控制
-        if (Math.abs(y) > 0.1) {
-            if (y > 0.1) {
-                // 前推：压下镜头（向下看）
-                viewer.camera.lookDown(y * rotateSpeed);
-            } else if (y < -0.1) {
-                // 后拉：抬起镜头（向上看）
-                viewer.camera.lookUp(-y * rotateSpeed);
-            }
-        }
+        });
     });
     
     // 方向键控制
@@ -1244,19 +1859,6 @@ function initializeCameraControls() {
         e.preventDefault();
         viewer.camera.moveRight(moveSpeed);
     });
-    
-    // 修复：正确配置鼠标控制
-    // 重置所有鼠标控制配置
-    viewer.scene.screenSpaceCameraController.enableRotate = false; // 禁用旋转
-    viewer.scene.screenSpaceCameraController.enableTranslate = false;
-    viewer.scene.screenSpaceCameraController.enableZoom = false; // 禁用滚轮缩放
-    viewer.scene.screenSpaceCameraController.enableTilt = false;
-    viewer.scene.screenSpaceCameraController.enableLook = false;
-    
-    // 配置右键拖动为平移（移动镜头位置）
-    viewer.scene.screenSpaceCameraController.translateEventTypes = [
-        Cesium.CameraEventType.RIGHT_DRAG
-    ];
     
     // 键盘WASD控制移动
     document.addEventListener('keydown', function(event) {
@@ -1345,12 +1947,10 @@ function initializeCameraControls() {
     });
     
     heightSlider.addEventListener('input', function() {
-        const height = parseInt(this.value);
-        // 使用防抖避免频繁调用
-        clearTimeout(window.heightTimeout);
-        window.heightTimeout = setTimeout(() => {
+        const height = parseInt(this.value, 10);
+        if (!isNaN(height)) {
             adjustHeight(height);
-        }, 100);
+        }
     });
     
     // 预设变焦按钮事件监听
@@ -1387,22 +1987,31 @@ function initializeCameraControls() {
         }
     });
     
-    // 环境参数按钮事件监听
-    envParamsBtn.addEventListener('click', function() {
-        envParamsMenu.style.display = 'flex';
-    });
+    // 环境参数按钮事件监听（兼容旧元素引用）
+    if (envParamsBtn) {
+        envParamsBtn.addEventListener('click', function() {
+            envParamsMenu.style.display = 'flex';
+            if (topBtnWeather) topBtnWeather.classList.add('active');
+        });
+    }
     
     // 点击环境参数菜单外部关闭菜单
-    envParamsMenu.addEventListener('click', function(event) {
-        if (event.target === envParamsMenu) {
-            envParamsMenu.style.display = 'none';
-        }
-    });
+    if (envParamsMenu) {
+        envParamsMenu.addEventListener('click', function(event) {
+            if (event.target === envParamsMenu) {
+                envParamsMenu.style.display = 'none';
+                if (topBtnWeather) topBtnWeather.classList.remove('active');
+            }
+        });
+    }
     
     // 关闭环境参数菜单按钮事件监听
-    closeEnvParamsBtn.addEventListener('click', function() {
-        envParamsMenu.style.display = 'none';
-    });
+    if (closeEnvParamsBtn) {
+        closeEnvParamsBtn.addEventListener('click', function() {
+            envParamsMenu.style.display = 'none';
+            if (topBtnWeather) topBtnWeather.classList.remove('active');
+        });
+    }
     
     // 距离雾各能见度挡位按钮事件监听（5km / 10km / 15km / 20km / 25km / 30km）
     if (fog5km) {
@@ -1491,10 +2100,15 @@ function toggleCardPanel(cardEl, btnEl, openDisplay = 'block') {
     }
 }
 
-// 绑定顶部居中对称按钮事件：相机控制、时钟控制、坐标位置、隐藏GUI
+// 绑定顶部居中对称按钮事件：相机控制、环境与天气、时钟控制、坐标位置、隐藏GUI
 if (topBtnCamera) {
     topBtnCamera.addEventListener('click', function() {
         toggleCardPanel(controls, topBtnCamera, 'block');
+    });
+}
+if (topBtnWeather) {
+    topBtnWeather.addEventListener('click', function() {
+        toggleCardPanel(envParamsMenu, topBtnWeather, 'flex');
     });
 }
 if (topBtnClock) {
@@ -1777,6 +2391,13 @@ function setAmapPickerLocation(gcjLng, gcjLat, locName = "自定义坐标点", s
     if (shouldPan && amapMap) {
         const targetZoom = zoomLevel || amapMap.getZoom() || 13;
         amapMap.setView([gcjLat, gcjLng], targetZoom);
+    }
+
+    // 同步预更新左上角圆形高德小地图的中心位置
+    if (miniMap) {
+        lastMiniMapGcjLng = gcjLng;
+        lastMiniMapGcjLat = gcjLat;
+        miniMap.setView([gcjLat, gcjLng], miniMap.getZoom() || 13, { animate: false });
     }
 }
 
@@ -2076,7 +2697,7 @@ function flyFromAmapToCesium(startDirectly = true) {
 
     // 同步更新选点状态与界面信息
     selectedPosition = position;
-    preloadedTerrainHeight = estimatedHeight;
+    selectedCartographic = Cesium.Cartographic.clone(cartographic);
     selectedLongitude.textContent = wgsLng.toFixed(6) + '°';
     selectedLatitude.textContent = wgsLat.toFixed(6) + '°';
     confirmSelectionBtn.disabled = false;
@@ -2084,31 +2705,16 @@ function flyFromAmapToCesium(startDirectly = true) {
     // 添加选择点屏幕标记
     addSelectionMarker(position);
 
-    // 后台并行预采样最高精度地表高程
-    const currentSelectionId = ++selectionCounter;
-    preloadedTerrainPromise = (async () => {
-        try {
-            await initializeTerrain();
-            if (viewer.terrainProvider && !(viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider)) {
-                const terrainSample = await Cesium.sampleTerrainMostDetailed(
-                    viewer.terrainProvider, 
-                    [cartographic]
-                );
-                if (currentSelectionId === selectionCounter && terrainSample && terrainSample[0] && typeof terrainSample[0].height === 'number') {
-                    preloadedTerrainHeight = terrainSample[0].height;
-                    return terrainSample[0].height;
-                }
-            }
-        } catch (e) {
-            console.log("后台预采样高精度地形高度失败:", e);
-        }
-        return estimatedHeight;
-    })();
+    // 触发选点地表高程与海平面海拔多级采样
+    sampleSelectedPointElevation(cartographic);
 
     if (startDirectly) {
         // 直接飞入并无缝进入相机模拟模式
         startCameraMode(position);
     } else {
+        // 首次飞入预览点时，检测大体地形轮廓是否已加载好，未加载好则在屏幕中央显示“地形加载中...”
+        checkAndMonitorTerrainOutline(cartographic, true);
+
         // 在三维地球上以俯视预览该位置（距地表 5000 米）
         const previewHeight = Math.max(estimatedHeight + 5000, 3000);
         viewer.camera.flyTo({
@@ -2121,7 +2727,16 @@ function flyFromAmapToCesium(startDirectly = true) {
             duration: 2.0,
             easingFunction: Cesium.EasingFunction.QUADRATIC_IN_OUT,
             complete: function() {
+                terrainOutlineState.isFlying = false;
+                terrainOutlineState.landedTime = performance.now();
+                if (terrainOutlineState.active && isTerrainOutlineLoaded(cartographic)) {
+                    hideTerrainOutlinePrompt();
+                }
                 console.log("已定位到该机位俯视预览视角");
+            },
+            cancel: function() {
+                terrainOutlineState.isFlying = false;
+                terrainOutlineState.landedTime = performance.now();
             }
         });
     }
@@ -2398,6 +3013,12 @@ function main() {
     
     // 提前在后台预加载3D地形，避免选点进入相机模式时因发起网络请求而产生数秒的原地卡顿
     initializeTerrain();
+
+    // 初始化左上角圆形高德小地图，并绑定每帧渲染同步相机位置与朝向
+    initMiniMap(101.8797, 29.5969);
+    if (viewer && viewer.scene && viewer.scene.postRender) {
+        viewer.scene.postRender.addEventListener(updateCameraInfo);
+    }
 
     // 初始化相机控制菜单、时间设置菜单、经纬度和方位角菜单的鼠标拖拽功能
     initDraggablePanels();

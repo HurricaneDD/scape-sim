@@ -198,12 +198,27 @@
             position: absolute;
             bottom: 39%;
             right: 2%;
-            width: 43%;
+            width: 45%;
             background: white;
-            padding: 6px;
+            padding: 6px 8px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             z-index: 1001;
+        }
+        
+        .height-info-lines {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-bottom: 4px;
+        }
+        
+        .height-info-line {
+            font-size: 11px;
+            line-height: 1.3;
+            color: #333;
+            font-weight: 500;
+            white-space: nowrap;
         }
         
         /* 滑块容器 */
@@ -288,72 +303,60 @@
         #heightSlider {
             width: 100%;
             height: 6px;
-            background: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            background: #cbd5e1;
             border-radius: 3px;
             outline: none;
             -webkit-appearance: none;
+            display: block;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
         }
         
+        #heightSlider::-webkit-slider-runnable-track,
         #heightSlider::-webkit-slider-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 5%, 
-                #0078d4 5%, 
-                #0078d4 10%, 
-                #e0e0e0 10%, 
-                #e0e0e0 20%, 
-                #0078d4 20%, 
-                #0078d4 25%, 
-                #e0e0e0 25%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
         #heightSlider::-moz-range-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 5%, 
-                #0078d4 5%, 
-                #0078d4 10%, 
-                #e0e0e0 10%, 
-                #e0e0e0 20%, 
-                #0078d4 20%, 
-                #0078d4 25%, 
-                #e0e0e0 25%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
         #heightSlider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 20px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+            margin-top: -7px;
         }
         
         #heightSlider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 20px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
         }
         
+        #altitudeValue,
         #heightValue {
             color: #0078d4;
             font-weight: bold;
+            font-variant-numeric: tabular-nums;
         }
         
         /* 地图选点提示框 */
@@ -623,6 +626,36 @@
             touch-action: none !important;
         }
 
+        /* 首次飞入预览点地形轮廓尚未加载完成时的屏幕正中央提示语（长度 1000px） */
+        #terrainOutlineLoadingPrompt {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1000px;
+            max-width: 92vw;
+            box-sizing: border-box;
+            background: rgba(30, 35, 45, 0.84);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: rgba(255, 255, 255, 0.98);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            padding: 18px 24px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.55);
+            white-space: nowrap;
+            text-align: center;
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
+            z-index: 1450;
+            display: none;
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.25s ease;
+        }
+
         /* 地景数据下载状态底部居中单行小字指示器（移动端适配，位于 3D 视窗底部时间线上方居中） */
         #sceneryLoadingIndicator {
             position: absolute;
@@ -652,6 +685,8 @@
 <body>
     <!-- 上部地球显示区域 -->
     <div id="cesiumContainer">
+        <!-- 首次飞入预览点且地形轮廓未加载好时的屏幕中央提示语 -->
+        <div id="terrainOutlineLoadingPrompt" style="display: none;">地形加载中...</div>
         <!-- 地景数据下载状态底部居中单行小字指示器 -->
         <div id="sceneryLoadingIndicator" style="display: none;">正在下载地景数据 - 0.0MB/0.0MB (0%) - 0.0MB/s ETA 00:00</div>
     </div>
@@ -705,13 +740,16 @@
         <!-- 第二行：高度控制 -->
         <div class="height-section">
             <div id="heightSliderContainer" style="display: none;">
-                <label for="heightSlider">距选取点地面<br>相对高度:<span id="heightValue">25m</span></label>
+                <div class="height-info-lines">
+                    <div class="height-info-line">距海平面高度（海拔）：<span id="altitudeValue">25m</span></div>
+                    <div class="height-info-line">距选取点地面相对高度：<span id="heightValue">25m</span></div>
+                </div>
                 <div class="slider-container">
-                    <input type="range" id="heightSlider" min="0" max="200" step="1" value="25">
+                    <input type="range" id="heightSlider" min="0" max="200" step="1" value="25" style="width: 100%; margin: 0; padding: 0;">
                     <div class="slider-ticks">
-                        <div class="tick" style="left: 12.5%"><span class="tick-label">25m</span></div>
-                        <div class="tick" style="left: 50%"><span class="tick-label">100m</span></div>
-                        <div class="tick" style="left: 100%"><span class="tick-label">200m</span></div>
+                        <div class="tick" style="left: calc(3px + 0.125 * (100% - 6px));"><span class="tick-label">25m</span></div>
+                        <div class="tick" style="left: calc(3px + 0.50 * (100% - 6px));"><span class="tick-label">100m</span></div>
+                        <div class="tick" style="left: calc(100% - 3px);"><span class="tick-label">200m</span></div>
                     </div>
                 </div>
             </div>

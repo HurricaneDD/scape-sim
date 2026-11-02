@@ -156,3 +156,52 @@
       1. 移除硬编码的 `0.38MB/片`、`10.6MB` 保底值及 `2.6MB/s` 初始假网速，单瓦片跨域兜底均值修正为符合真实压缩体积的 `24KB`（`24 * 1024` 字节），并在检测到 `encodedBodySize / transferSize > 0` 时动态自适应校准单瓦片真实均值（严禁使用解压后的 `decodedBodySize`）。
       2. 仅通过 `performance.getEntriesByType('resource')` 实际完成的网络请求累加已下载字节数 `actualDownloadedBytes`，飞行途中忽略因视锥裁剪取消导致的队列骤降，彻底杜绝上百 MB 的虚高总量（修复后单次机位加载总量回归真实的 `0.5MB ~ 4MB` 量级）。
       3. 采用 `1.5s` 滑动时间窗口（`byteSamples`）统计窗口内真实新增下载字节数并除以实际耗时计算实时网速（`MB/s`），彻底切断“总体积跳变反推网速”的失真链路。
+  - **首次飞入预览点地形轮廓检测与屏幕中央“地形加载中...”提示语（双端同步）**：
+    - **大体地形轮廓检测机制（`isTerrainOutlineLoaded`）**：
+      1. 校验 `viewer.terrainProvider` 已由初始纯圆球 `EllipsoidTerrainProvider` 切换为真实三维地形提供者。
+      2. 调用 `viewer.scene.globe.getHeight(targetCartographic)` 检测目标经纬度处四叉树地表是否已生成有效地形高程数值（若地形网格尚未构建则返回 `undefined`；若已知目标点为非零海拔山区，还需确认渲染高度已脱离 0m 椭球基准）。
+      3. 检查当前渲染队列 `viewer.scene.globe._surface._tilesToRender` 中覆盖目标点的地形瓦片是否已达到局部地形轮廓层级（`tile.level >= 7` 且顶点缓冲 `tile.data.vertexArray` 已就绪），或落地后 `viewer.scene.globe.tilesLoaded` 已全部完成。
+    - **屏幕中央提示交互**：首次飞入某个预览点（含第一视角模拟与空中视角预览）时，若检测到目标点的大体地形轮廓尚未加载完成，立即在屏幕正中央显示 `#terrainOutlineLoadingPrompt`（`地形加载中...`），并在每帧 `postRender` 中实时检测，待大体地形轮廓网格加载就绪后自动平滑淡出消失。
+  - **顶部工具栏新增“环境与天气”图标按钮 & 精简相机控制菜单**：
+    - 在电脑版（`final.html`）屏幕上方居中工具栏（`#topToolbar`）从左往右第 2 个位置新增**环境与天气**天气图标按钮（`#topBtnWeather`，云朵与太阳 SVG 图标，与其他顶部按钮保持统一 `31px × 31px` 外框与 `17px × 17px` 图标规格），点击即可打开/关闭「环境与天气调整」卡片（`#envParamsMenu`），并同步按钮激活高亮态。顶部 5 个按钮从左到右依次为：相机控制、环境与天气、时钟控制、坐标位置、隐藏GUI。
+    - 删除相机控制菜单（`#controls`）底部原有的“环境与天气”（`#envParamsBtn`）与“隐藏UI/隐藏GUI”（`#hideUIBtn`）按钮，统一由顶部工具栏直接控制。
+  - **扩大“地形加载中...”提示框至 1000px 宽度 & 新增左上角高德圆形小地图**：
+    - **“地形加载中...”提示框与文字放大**：将 `#terrainOutlineLoadingPrompt` 提示框长度调整为 `1000px`（`width: 1000px; max-width: 92vw; box-sizing: border-box;`），字号放大为 `36px`（移动版 `24px`）、加粗显示并增加内边距与字间距，使屏幕中央加载提示更加醒目清晰。
+    - **左上角圆形高德小地图（`#miniMapWrapper`）**：
+      - 进入相机模拟模式后，在屏幕左上角（`top: 30px; left: 20px;`）展示直径 `164px` 的圆形小地图（`#miniMapCircle`），并将相机控制卡片默认 `top` 位置下移至 `210px` 避免遮挡冲突。
+      - **外部正北红色 `N` 标识**：在圆形外框正上方外部（`#miniMapNorthLabel`）标注醒目的红色粗体 `N` 字样，代表正北方向。
+      - **高德底图与实时相机位置/朝向同步**：底层采用高德地图瓦片，在 `updateCameraInfo` 中实时将当前相机的 WGS-84 经纬度通过 `CoordTransform.wgs84ToGcj02` 转换为高德 GCJ-02 坐标并锁定于圆形小地图正中心；中心叠加相机位置圆点与旋转视锥扇形/方向箭头（`#miniMapDirectionRotor`），随相机方位角（`heading`）实时旋转体现当前镜头朝向。
+  - **修复左上角圆形高德小地图底图空白及不更新问题**：
+    - **问题根源排查**：
+      1. **隐藏容器 `0×0` 初始化与坐标锁死**：`#miniMapWrapper` 原先初始为 `display: none`，当切换为 `display: block` 并同步初始化 Leaflet 时，容器尚未完成重排或 `lastMiniMapGcjLng` 在 `invalidateSize()` 之前已被提前赋值，导致瓦片网格按 `0×0` 视口计算且后续静止机位下不再触发 `setView()` 重绘。
+      2. **无人高海拔雪山区纯街道矢量层（`style=7`）返回纯米白空瓦片**：在珠穆朗玛峰、贡嘎雪山、牛背山、梅里雪山等高海拔无人山区，`zoom=13~14` 下高德纯街道矢量瓦片（`style=7`）因周围无市政道路，官方服务器仅返回 `179 Byte` 的纯色底块（`#FAF8F2`），在 `164px` 圆形小视窗中呈现为“一片空白”。
+      3. **飞行未完成或空中预览时未触发小地图更新**：原 `showCameraControls()` 与 `initializeCameraControls()` 仅在 2.0 秒 `flyTo` 的 `complete` 回调中执行，若飞行被鼠标打断或处于“空中视角预览”模式，小地图不会挂载渲染循环。
+      4. **静态脚本缓存**：`server.js` 与 `final.html` 未禁用脚本缓存，导致旧版 `script.js` 缓存残留。
+    - **修复方案**：
+      1. **常驻真实尺寸布局**：将 `#miniMapWrapper` 设为初始常驻可见（`display: block`），`#miniMapLeaflet` 显式锁定 `164px × 164px` 像素尺寸，并将 `#mapSelectionOverlay` 下移至 `top: 210px`，在 `main()` 启动阶段即完成高德小地图初始化与多次 `invalidateSize` 校准。
+      2. **高德多层融合底图（地形/卫星 `style=6` + 矢量 `style=7` + 中文路网山峰注记 `style=8`）**：小地图底层加载高德地形/卫星实景层（`style=6`），中层半透明叠加高德标准矢量层（`style=7`），顶层叠加高德中文路网与地名山峰注记层（`style=8`），并在小地图底部提供「高德底图 / 高德卫星」一键切换按钮（`#miniMapLayerToggleBtn`），确保在繁华城市与无人雪山均呈现丰富清晰的高德底图，彻底杜绝纯白空块。
+      3. **全周期 60fps 实时姿态同步**：在 `main()` 中直接将 `updateCameraInfo` 挂载至 `viewer.scene.postRender`，并在 `startCameraMode` 起飞前、落地后及取消时均幂等激活控件与小地图，实时同步相机中心坐标与朝向。
+      4. **禁用静态缓存**：在 `server.js` 中配置 `Cache-Control: no-store` 并为 `final.html` 的 `script.js` 引用增加版本号参数。
+  - **调整左上角圆形小地图为“摄像头指向始终朝上”模式并精简视觉元素**：
+    - **摄像头指向始终朝上（Heading-Up 旋转）**：小地图画布（`#miniMapLeaflet` 扩展至 `240px × 240px` 居中裁剪，保证任意角度旋转四角均无空白）随相机方位角反向旋转（`rotate(-headingDeg)`），使小地图正上方始终对应当前摄像头的指向；同时圆形外框外部的红色 `N` 字样（`#miniMapNorthOrbit` / `#miniMapNorthLabel`）沿圆周外侧同步环绕旋转指示北方所在方位，并保持 `N` 字母正立显示。
+    - **移除小地图内部红色朝向箭头**：删除小地图中心 SVG 内的红色箭头多边形，仅保留中心相机位置圆点与固定朝上的柔和视锥扇形。
+    - **去除北方 `N` 字母阴影**：移除 `#miniMapNorthLabel` 的 `text-shadow` 阴影样式（`text-shadow: none`），呈现干净无阴影的纯红 `N` 字样。
+  - **高度调整小块加长与上下双行“距海平面高度（海拔）/ 距选取点地面相对高度”实时计算（双端同步）**：
+    - **高度调整小块加长与双行排版**：将电脑版 `#heightSliderContainer` 宽度由 `210px` 扩展至 `330px`（移动端同步扩展），文字重构为上下两行：
+      - 第一行：`距海平面高度（海拔）：xxm`（`#altitudeValue`）
+      - 第二行：`距选取点地面相对高度：xxm`（`#heightValue`）
+    - **海平面海拔（正高 $H$）多级采样与大地水准面修正计算**：
+      - 针对 Cesium World Terrain 高程基准为 WGS84 椭球大地高（$h_{\text{WGS84}}$）、与中国实际海平面正高（海拔 $H_{\text{MSL}}$）存在 $10\text{m}\sim 65\text{m}$ 大地水准面差距（$N$）的问题，内置 EGM96 大地水准面高程异常双线性插值网格（`getGeoidUndulation`），按 $H_{\text{MSL}} = h_{\text{WGS84}} - N(\lambda, \varphi)$ 进行基准面修正。
+      - 结合 `Cesium.sampleTerrainMostDetailed` 最高精度网格采样、四叉树瓦片实时 `globe.getHeight` 渐进校准、以及 30m SRTM/Copernicus DEM 海平面正高接口并行兜底，并在拖动滑块或使用方向键/WASD/QE 移动相机时 0ms 实时同步更新海拔与相对高度。
+  - **相对高度调整滑动条重制为相机焦距倍数滑块同款样式（双端同步）**：
+    - **长条矩形指示器与简洁哑光轨道**：将 `#heightSlider` 的原 `18px` 圆形滑块与斑马纹渐变轨道重构为与 `#zoomSlider` 完全一致的 `6px × 22px`（移动端 `6px × 20px`）垂直长条矩形指示器与 `#cbd5e1` 简洁微哑光轨道。
+    - **刻度线中心像素级对齐**：将高度刻度标记与文字（电脑版 `25m / 100m / 200m / 500m`，移动版 `25m / 100m / 200m`）由原来的粗略百分比定位改为 `left: calc(3px + p * (100% - 6px))` 精确换算，使滑块在 `25m`、`100m`、`200m`、`500m` 等任意挡位时，长条矩形指示器中轴线与对应刻度线严格重合。
+  - **提升镜头旋转速率、锁定滚转角为 0° & 小地图升级黑灰色边框与 N（红色）/ E / S / W 刻度及字母**：
+    - **镜头旋转速率提升、60fps 持续旋转与锁定滚转角 `roll = 0°`（双端同步）**：
+      - 电脑版（`script.js`）原镜头旋转速率 `rotateSpeed` 为 `0.005` 弧度/次（约 `0.29°/次`），且仅在鼠标/触点发生位移事件时触发；现将 `rotateSpeed` 提升 4 倍至 `0.02` 弧度/帧（约 `1.15°/帧`，60fps 下满偏转约 `69°/秒`），手机版（`mobile/script.js`）由 `0.02` 提升至 `0.035` 弧度/帧（约 `2.0°/帧`），并在 `setupJoystick` 中引入 `requestAnimationFrame` 持续帧循环，支持按住摇杆偏转时 60fps 持续平滑旋转镜头。
+      - **锁定相机滚转角始终为 `0°`**：废弃原 `camera.lookRight / lookLeft / lookDown / lookUp` 局部坐标轴旋转（复合旋转时会导致欧拉滚转角漂移、地平线倾斜），改为通过 `viewer.camera.setView` 仅更新相机偏航角（`heading`）与俯仰角（`pitch`），并将滚转角强制锁定为 `roll: 0.0`（0 度），确保任意拖动摇杆时地平线始终保持绝对水平。
+    - **左上角圆形小地图黑灰色边框与北（红色 N）、东（E）、南（S）、西（W）刻度及字母**：
+      - 将小地图圆形外框（`#miniMapCircle`）边框由白色改为黑灰色（`border: 3px solid #374151;`）。
+      - 在罗盘轨道（`#miniMapNorthOrbit`）外圈正北（0°）、正东（90°）、正南（180°）、正西（270°）四个方位均增加黑灰色刻度线（`.mini-map-cardinal-tick`），其中北方 `N` 字样标为醒目的红色（`#ff2424`），东 `E`、南 `S`、西 `W` 字样为黑灰色（`#374151`），随相机方位角旋转时四个方位字母同步反向自转保持正立易读。
+
+

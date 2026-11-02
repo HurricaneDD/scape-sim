@@ -16,10 +16,10 @@
             overflow: hidden;
         }
         
-        /* 主变焦控制操作 */
+        /* 主变焦控制操作（位于左上角圆形小地图下方，避免重叠） */
         #controls {
             position: absolute;
-            top: 15px;
+            top: 210px;
             left: 15px;
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
@@ -56,6 +56,8 @@
         #zoomSlider {
             width: 100%;
             height: 6px;
+            margin: 0;
+            padding: 0;
             background: #cbd5e1;
             border-radius: 3px;
             outline: none;
@@ -315,92 +317,114 @@
             left: 100px;
         }
         
-        /* 高度滑块容器 */
+        /* 高度滑块容器（加长宽度，容纳上下两行海拔与相对高度文字） */
         #heightSliderContainer {
             position: absolute;
             bottom: 60px;
             left: 50%;
             transform: translateX(-50%);
-            width: 210px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px;
+            width: 330px;
+            max-width: 90vw;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.92);
+            padding: 10px 16px;
             border-radius: 8px;
             z-index: 1000;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             border: 1px solid #ddd;
         }
         
+        .height-info-lines {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 8px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .height-info-line {
+            font-size: 13.5px;
+            line-height: 1.35;
+            color: #333;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        
         #heightSlider {
             width: 100%;
             height: 6px;
-            background: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            background: #cbd5e1;
             border-radius: 3px;
             outline: none;
             -webkit-appearance: none;
+            display: block;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
         }
         
-        /* 高度滑块轨道 */
+        /* 高度滑块轨道 - 与相机变焦倍数滑块保持一致 */
+        #heightSlider::-webkit-slider-runnable-track,
         #heightSlider::-webkit-slider-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 5%, 
-                #0078d4 5%, 
-                #0078d4 10%, 
-                #e0e0e0 10%, 
-                #e0e0e0 20%, 
-                #0078d4 20%, 
-                #0078d4 25%, 
-                #e0e0e0 25%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
         #heightSlider::-moz-range-track {
-            background: linear-gradient(to right, 
-                #e0e0e0 0%, 
-                #e0e0e0 5%, 
-                #0078d4 5%, 
-                #0078d4 10%, 
-                #e0e0e0 10%, 
-                #e0e0e0 20%, 
-                #0078d4 20%, 
-                #0078d4 25%, 
-                #e0e0e0 25%, 
-                #e0e0e0 40%, 
-                #0078d4 40%, 
-                #0078d4 50%, 
-                #e0e0e0 50%, 
-                #e0e0e0 100%);
+            height: 6px;
+            background: #cbd5e1;
+            border-radius: 3px;
+            border: none;
         }
         
-        /* 高度滑块按钮 */
+        /* 高度滑块长条矩形指示器 - 以中心点严格对齐刻度 */
         #heightSlider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 22px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            margin-top: -8px; /* (6px - 22px) / 2 = -8px，使长条矩形在垂直方向严格居中穿过轨道 */
+            transition: background-color 0.15s, transform 0.15s;
+        }
+        
+        #heightSlider:hover::-webkit-slider-thumb,
+        #heightSlider:active::-webkit-slider-thumb {
+            background: #005a9e;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            transform: scaleX(1.15);
         }
         
         #heightSlider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
+            width: 6px;
+            height: 22px;
+            border-radius: 2px;
             background: #0078d4;
-            cursor: pointer;
-            border: 2px solid white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            cursor: ew-resize;
+            border: 1.5px solid #ffffff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+            transition: background-color 0.15s, transform 0.15s;
         }
         
+        #heightSlider:hover::-moz-range-thumb,
+        #heightSlider:active::-moz-range-thumb {
+            background: #005a9e;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            transform: scaleX(1.15);
+        }
+        
+        #altitudeValue,
         #heightValue {
             color: #0078d4;
             font-weight: bold;
+            font-variant-numeric: tabular-nums;
         }
         
         /* 镜头回正按钮 */
@@ -577,10 +601,10 @@
             color: #333;
         }
         
-        /* 地图选点提示框 - 移动到屏幕左上角 */
+        /* 地图选点提示框 - 放置在左上角圆形小地图下方，避免与南向 S 刻度字母重叠 */
         #mapSelectionOverlay {
             position: absolute;
-            top: 20px;
+            top: 222px;
             left: 20px;
             background: rgba(255, 255, 255, 0.98);
             padding: 20px;
@@ -787,7 +811,10 @@
         }
 
         .hidden-mode #topToolbar,
+        .hidden-mode #miniMapWrapper,
         .hidden-mode #sceneryLoadingIndicator,
+        .hidden-mode #terrainOutlineLoadingPrompt,
+        .hidden-mode #envParamsMenu,
         .hidden-mode #controls,
         .hidden-mode #timeControls,
         .hidden-mode #cameraInfo,
@@ -797,6 +824,216 @@
         .hidden-mode #heightSliderContainer,
         .hidden-mode #mapSelectionOverlay {
             display: none !important;
+        }
+
+        /* 左上角圆形高德小地图（摄像头朝向始终向上，黑灰色边框，外框外部标出 N/E/S/W 四个黑灰色刻度与字母） */
+        #miniMapWrapper {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            width: 164px;
+            height: 164px;
+            z-index: 1600;
+            display: block;
+            user-select: none;
+        }
+
+        /* 围绕圆形外框旋转的罗盘方位轨道容器（N/E/S/W 刻度与字母） */
+        #miniMapNorthOrbit {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 164px;
+            height: 164px;
+            transform-origin: 50% 50%;
+            transform: rotate(0deg);
+            pointer-events: none;
+            z-index: 20;
+            will-change: transform;
+        }
+
+        /* 东(E)、南(S)、西(W)、北(N) 四个方位的外框刻度线（黑灰色） */
+        .mini-map-cardinal-tick {
+            position: absolute;
+            background: #374151;
+            border-radius: 1px;
+            pointer-events: none;
+        }
+
+        .mini-map-tick-n {
+            top: -5px;
+            left: calc(50% - 1.25px);
+            width: 2.5px;
+            height: 6px;
+        }
+
+        .mini-map-tick-e {
+            right: -5px;
+            top: calc(50% - 1.25px);
+            width: 6px;
+            height: 2.5px;
+        }
+
+        .mini-map-tick-s {
+            bottom: -5px;
+            left: calc(50% - 1.25px);
+            width: 2.5px;
+            height: 6px;
+        }
+
+        .mini-map-tick-w {
+            left: -5px;
+            top: calc(50% - 1.25px);
+            width: 6px;
+            height: 2.5px;
+        }
+
+        /* 东(E)、南(S)、西(W)、北(N) 四个方位的字母（黑灰色、无阴影，随旋转反向自转保持正立） */
+        .mini-map-cardinal-label {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform-origin: 50% 50%;
+            transform: rotate(0deg);
+            color: #374151;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            font-weight: 800;
+            line-height: 1;
+            text-shadow: none;
+            box-shadow: none;
+            filter: none;
+            pointer-events: none;
+            will-change: transform;
+        }
+
+        #miniMapNorthLabel {
+            top: -23px;
+            left: calc(50% - 9px);
+            color: #ff2424;
+        }
+
+        #miniMapEastLabel {
+            right: -23px;
+            top: calc(50% - 9px);
+        }
+
+        #miniMapSouthLabel {
+            bottom: -23px;
+            left: calc(50% - 9px);
+        }
+
+        #miniMapWestLabel {
+            left: -23px;
+            top: calc(50% - 9px);
+        }
+
+        #miniMapCircle {
+            position: relative;
+            width: 164px;
+            height: 164px;
+            border-radius: 50%;
+            overflow: hidden;
+            -webkit-mask-image: -webkit-radial-gradient(white, black);
+            isolation: isolate;
+            transform: translateZ(0);
+            border: 3px solid #374151;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+            background: #f5f3ef;
+            box-sizing: border-box;
+        }
+
+        /* 内部地图画布放大至 240x240 并居中，确保任意角度旋转时圆形边缘四角均铺满高德瓦片 */
+        #miniMapLeaflet {
+            position: absolute !important;
+            top: -38px !important;
+            left: -38px !important;
+            width: 240px !important;
+            height: 240px !important;
+            transform-origin: 50% 50% !important;
+            transform: rotate(0deg);
+            will-change: transform;
+            z-index: 1 !important;
+            background: #f5f3ef !important;
+        }
+
+        #miniMapLeaflet .leaflet-pane,
+        #miniMapLeaflet .leaflet-tile-pane,
+        #miniMapLeaflet .leaflet-layer {
+            z-index: 1 !important;
+        }
+
+        #miniMapLeaflet img.leaflet-tile {
+            visibility: visible !important;
+            max-width: none !important;
+        }
+
+        /* 中心相机位置点与固定向上的镜头视锥（无需红色箭头） */
+        #miniMapCameraOverlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 96px;
+            height: 96px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 600;
+        }
+
+        #miniMapLayerToggleBtn {
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 650;
+            background: rgba(15, 23, 42, 0.72);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            border-radius: 10px;
+            padding: 1px 7px;
+            font-size: 10px;
+            font-weight: 600;
+            line-height: 1.4;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            transition: background 0.15s;
+        }
+
+        #miniMapLayerToggleBtn:hover {
+            background: rgba(2, 132, 199, 0.9);
+        }
+
+        /* 首次飞入预览点地形轮廓尚未加载完成时的屏幕正中央提示语（长度 1000px） */
+        #terrainOutlineLoadingPrompt {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1000px;
+            max-width: 92vw;
+            box-sizing: border-box;
+            background: rgba(30, 35, 45, 0.84);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: rgba(255, 255, 255, 0.98);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            padding: 26px 40px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.55);
+            white-space: nowrap;
+            text-align: center;
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75);
+            z-index: 1450;
+            display: none;
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.25s ease;
         }
 
         /* 地景数据下载状态底部居中单行小字指示器（位于底部时间线 27px 与高度滑块 60px 之间，互不遮挡冲突） */
@@ -1461,7 +1698,7 @@
         </div>
     </div>
     
-    <!-- 顶部居中对称圆角方形按钮栏：相机控制、时钟控制、坐标位置、隐藏GUI -->
+    <!-- 顶部居中对称圆角方形按钮栏：相机控制、环境与天气、时钟控制、坐标位置、隐藏GUI -->
     <div id="topToolbar" style="display: none;">
         <!-- 1. 相机控制 (图标: 相机) -->
         <button id="topBtnCamera" class="top-toolbar-btn" title="相机控制" aria-label="相机控制">
@@ -1470,14 +1707,25 @@
                 <circle cx="12" cy="13" r="4"></circle>
             </svg>
         </button>
-        <!-- 2. 时钟控制 (图标: 时钟) -->
+        <!-- 2. 环境与天气 (图标: 天气/云朵与太阳) -->
+        <button id="topBtnWeather" class="top-toolbar-btn" title="环境与天气" aria-label="环境与天气">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v2"></path>
+                <path d="m4.93 4.93 1.41 1.41"></path>
+                <path d="M20 12h2"></path>
+                <path d="m19.07 4.93-1.41 1.41"></path>
+                <path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"></path>
+                <path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"></path>
+            </svg>
+        </button>
+        <!-- 3. 时钟控制 (图标: 时钟) -->
         <button id="topBtnClock" class="top-toolbar-btn" title="时钟控制" aria-label="时钟控制">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="9.5"></circle>
                 <polyline points="12 7 12 12 15.5 14"></polyline>
             </svg>
         </button>
-        <!-- 3. 坐标位置 (图标: 大头针) -->
+        <!-- 4. 坐标位置 (图标: 大头针) -->
         <button id="topBtnCoord" class="top-toolbar-btn" title="坐标位置" aria-label="坐标位置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="7.5" r="4.5"></circle>
@@ -1485,7 +1733,7 @@
                 <circle cx="10.5" cy="6" r="1" fill="currentColor" stroke="none"></circle>
             </svg>
         </button>
-        <!-- 4. 隐藏GUI (图标: 眼睛) -->
+        <!-- 5. 隐藏GUI (图标: 眼睛) -->
         <button id="topBtnHideGUI" class="top-toolbar-btn" title="隐藏GUI" aria-label="隐藏GUI">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"></path>
@@ -1493,6 +1741,45 @@
             </svg>
         </button>
     </div>
+
+    <!-- 左上角圆形高德小地图：摄像头指向始终朝上，黑灰色边框，外框外部标出 N/E/S/W 四个黑灰色刻度与字母 -->
+    <div id="miniMapWrapper">
+        <div id="miniMapNorthOrbit">
+            <div class="mini-map-cardinal-tick mini-map-tick-n"></div>
+            <div class="mini-map-cardinal-tick mini-map-tick-e"></div>
+            <div class="mini-map-cardinal-tick mini-map-tick-s"></div>
+            <div class="mini-map-cardinal-tick mini-map-tick-w"></div>
+            <div id="miniMapNorthLabel" class="mini-map-cardinal-label">N</div>
+            <div id="miniMapEastLabel" class="mini-map-cardinal-label">E</div>
+            <div id="miniMapSouthLabel" class="mini-map-cardinal-label">S</div>
+            <div id="miniMapWestLabel" class="mini-map-cardinal-label">W</div>
+        </div>
+        <div id="miniMapCircle">
+            <div id="miniMapLeaflet"></div>
+            <div id="miniMapCameraOverlay">
+                <svg viewBox="0 0 96 96" width="96" height="96" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <radialGradient id="miniMapFovGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                            <stop offset="0%" stop-color="#0284c7" stop-opacity="0.55" />
+                            <stop offset="70%" stop-color="#0ea5e9" stop-opacity="0.25" />
+                            <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.0" />
+                        </radialGradient>
+                    </defs>
+                    <!-- 相机朝向始终向上（固定朝正上方） -->
+                    <path d="M 48 48 L 20 8 A 46 46 0 0 1 76 8 Z" fill="url(#miniMapFovGrad)" />
+                    <line x1="48" y1="48" x2="22" y2="10" stroke="rgba(2, 132, 199, 0.7)" stroke-width="1.4" />
+                    <line x1="48" y1="48" x2="74" y2="10" stroke="rgba(2, 132, 199, 0.7)" stroke-width="1.4" />
+                    <!-- 中心当前相机位置点 -->
+                    <circle cx="48" cy="48" r="6.5" fill="#0284c7" stroke="#ffffff" stroke-width="2.2" />
+                    <circle cx="48" cy="48" r="2.4" fill="#ffffff" />
+                </svg>
+            </div>
+            <button id="miniMapLayerToggleBtn" type="button" title="切换小地图底图模式">高德底图</button>
+        </div>
+    </div>
+
+    <!-- 首次飞入预览点且地形轮廓未加载好时的屏幕中央提示语 -->
+    <div id="terrainOutlineLoadingPrompt" style="display: none;">地形加载中...</div>
 
     <!-- 地景数据下载状态底部居中单行小字指示器 -->
     <div id="sceneryLoadingIndicator" style="display: none;">正在下载地景数据 - 0.0MB/0.0MB (0%) - 0.0MB/s ETA 00:00</div>
@@ -1532,8 +1819,6 @@
         <div class="control-group">
             <div class="switch-container">
                 <button id="openAmapPickerFromControlsBtn" class="button" style="background: #059669; color: white;">📍 更换机位</button>
-                <button id="envParamsBtn" class="button">环境与天气</button>
-                <button id="hideUIBtn" class="button">隐藏UI</button>
                 <button id="faqModalBtn" class="button">常见问题</button>
             </div>
         </div>
@@ -1590,21 +1875,24 @@
 
     <!-- 高度滑块 -->
     <div id="heightSliderContainer" style="display: none;">
-        <label for="heightSlider">距选取点地面<br>相对高度:<span id="heightValue">25m</span></label>
+        <div class="height-info-lines">
+            <div class="height-info-line">距海平面高度（海拔）：<span id="altitudeValue">25m</span></div>
+            <div class="height-info-line">距选取点地面相对高度：<span id="heightValue">25m</span></div>
+        </div>
         <div class="slider-container">
             <input type="range" id="heightSlider" min="0" max="500" step="1" value="25">
-            <!-- 高度刻度标记 -->
-            <div class="slider-mark" style="left: 5%;"></div>
-            <div class="slider-mark-label" style="left: 5%;">25m</div>
+            <!-- 高度刻度标记（以长条矩形指示器中心点为对齐标准） -->
+            <div class="slider-mark" style="left: calc(3px + 0.05 * (100% - 6px));"></div>
+            <div class="slider-mark-label" style="left: calc(3px + 0.05 * (100% - 6px));">25m</div>
             
-            <div class="slider-mark" style="left: 20%;"></div>
-            <div class="slider-mark-label" style="left: 20%;">100m</div>
+            <div class="slider-mark" style="left: calc(3px + 0.20 * (100% - 6px));"></div>
+            <div class="slider-mark-label" style="left: calc(3px + 0.20 * (100% - 6px));">100m</div>
             
-            <div class="slider-mark" style="left: 40%;"></div>
-            <div class="slider-mark-label" style="left: 40%;">200m</div>
+            <div class="slider-mark" style="left: calc(3px + 0.40 * (100% - 6px));"></div>
+            <div class="slider-mark-label" style="left: calc(3px + 0.40 * (100% - 6px));">200m</div>
             
-            <div class="slider-mark" style="left: 100%;"></div>
-            <div class="slider-mark-label" style="left: 100%;">500m</div>
+            <div class="slider-mark" style="left: calc(100% - 3px);"></div>
+            <div class="slider-mark-label" style="left: calc(100% - 3px);">500m</div>
         </div>
     </div>
     
@@ -1709,8 +1997,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- 引入 Cesium 核心库（使用稳定版本 1.124） -->
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Cesium.js"></script>
-    <!-- 引入你的自定义脚本 -->
-    <script src="script.js"></script>
+    <!-- 引入你的自定义脚本（附加版本号防止浏览器使用旧缓存） -->
+    <script src="script.js?v=20261031_zero_roll"></script>
 
 </body>
 </html>

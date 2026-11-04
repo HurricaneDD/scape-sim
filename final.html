@@ -1947,7 +1947,7 @@
                 <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
                     <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：选点时，地图上光秃秃的，没有地标，找不到地点怎么办？</div>
                     <div style="line-height: 1.6; font-size: 14px; color: #444;">
-                        <p style="margin: 4px 0;">A：点击右上角偏右侧的按钮选择地图图层。默认是“Bing Maps Aerial（必应纯卫星地图）”，可以选择“Bing Maps Aerial with Labels（带标记的必应卫星地图）”。如此地图上会有英文标记，方便选点。</p>
+                        <p style="margin: 4px 0;">A：点击右上角偏右侧的“Imagery”按钮选择底图。默认是“高德卫星影像”，也可以选择“高德卫星（路网注记）”显示中文路网与地名，或“高德普通地图”查看矢量地图，方便定位选点。</p>
                     </div>
                 </div>
                 <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
@@ -1973,11 +1973,10 @@
                     </div>
                 </div>
                 <div style="margin-bottom: 16px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
-                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：为什么卫星地景加载这么慢？</div>
+                    <div style="font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #222;">Q：卫星地景加载慢或底图不清晰怎么办？</div>
                     <div style="line-height: 1.6; font-size: 14px; color: #444;">
-                        <p style="margin: 4px 0;">A：默认底图是Bing Maps Aerial（必应卫星地图），加载可能较慢。</p>
-                        <p style="margin: 4px 0;">建议在网络环境较好的情况下使用，若还无法正常加载，可以尝试科学上网。</p>
-                        <p style="margin: 4px 0;">由于自定义国内底图（如高德、百度、天地图）的难度较大，目前暂不考虑加入此功能。</p>
+                        <p style="margin: 4px 0;">A：默认底图已更换为高德卫星影像，国内访问速度较快。高德瓦片已自动进行 GCJ-02 → WGS-84 纠偏，与三维地形和经纬度精确对齐。</p>
+                        <p style="margin: 4px 0;">若个别地区高德卫星影像较旧或加载异常，可在右上角“Imagery”菜单中切换“高德普通地图”、必应卫星影像等其他底图。</p>
                     </div>
                 </div>
                 <div style="margin-bottom: 8px; padding: 14px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
@@ -1998,7 +1997,7 @@
     <!-- 引入 Cesium 核心库（使用稳定版本 1.124） -->
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.139/Build/Cesium/Cesium.js"></script>
     <!-- 引入你的自定义脚本（附加版本号防止浏览器使用旧缓存） -->
-    <script src="script.js?v=20261031_zero_roll"></script>
+    <script src="script.js?v=20261104_amap_basemap"></script>
 
 </body>
 </html>

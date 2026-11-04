@@ -1,6 +1,161 @@
 // 访问令牌
 Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlNzJjNDgxMS0wNGIxLTQwMmYtODYzMy03ODQ3Njg4Y2FlYzQiLCJpZCI6Mzk3MjkzLCJpYXQiOjE3NzI1NDc1NDN9.MTjRT7M805SQ81Q0dNgYhenCD-I4SOl3nAbFJOz0Dpg"
 
+// =========================================================================
+// 空间坐标转换算法工具类（WGS-84 <-> GCJ-02）
+// =========================================================================
+const CoordTransform = {
+    PI: Math.PI,
+    a: 6378245.0, // Krasovsky 1940 长半轴
+    ee: 0.00669342162296594323, // 偏心率平方
+
+    // 判断坐标是否在中国境外
+    outOfChina: function(lng, lat) {
+        return (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271);
+    },
+
+    transformLat: function(x, y) {
+        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    },
+
+    transformLng: function(x, y) {
+        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+        return ret;
+    },
+
+    // WGS-84 转 GCJ-02（正向加偏）
+    wgs84ToGcj02: function(lng, lat) {
+        if (this.outOfChina(lng, lat)) return [lng, lat];
+        let dLat = this.transformLat(lng - 105.0, lat - 35.0);
+        let dLng = this.transformLng(lng - 105.0, lat - 35.0);
+        const radLat = lat / 180.0 * Math.PI;
+        let magic = Math.sin(radLat);
+        magic = 1 - this.ee * magic * magic;
+        const sqrtMagic = Math.sqrt(magic);
+        dLat = (dLat * 180.0) / ((this.a * (1 - this.ee)) / (magic * sqrtMagic) * Math.PI);
+        dLng = (dLng * 180.0) / (this.a / sqrtMagic * Math.cos(radLat) * Math.PI);
+        return [lng + dLng, lat + dLat];
+    },
+
+    // GCJ-02 转 WGS-84（高精度4次牛顿迭代反解）
+    gcj02ToWgs84: function(gcjLng, gcjLat) {
+        if (this.outOfChina(gcjLng, gcjLat)) return [gcjLng, gcjLat];
+        let wgsLng = gcjLng;
+        let wgsLat = gcjLat;
+        for (let i = 0; i < 4; i++) {
+            const [currGcjLng, currGcjLat] = this.wgs84ToGcj02(wgsLng, wgsLat);
+            const dLng = currGcjLng - gcjLng;
+            const dLat = currGcjLat - gcjLat;
+            wgsLng -= dLng;
+            wgsLat -= dLat;
+        }
+        return [wgsLng, wgsLat];
+    }
+};
+
+// =========================================================================
+// 高德地图底图（GCJ-02 火星坐标 -> WGS-84 自动纠偏，与电脑版保持一致）
+// =========================================================================
+class AmapMercatorTilingScheme extends Cesium.WebMercatorTilingScheme {
+    constructor(options) {
+        super(options);
+        const gcjProjection = new Cesium.WebMercatorProjection();
+        const scratchCartographic = new Cesium.Cartographic();
+
+        // WGS-84 -> GCJ-02 -> Web Mercator（计算应请求的高德瓦片行列号）
+        this._projection.project = function(cartographic, result) {
+            const [gcjLng, gcjLat] = CoordTransform.wgs84ToGcj02(
+                Cesium.Math.toDegrees(cartographic.longitude),
+                Cesium.Math.toDegrees(cartographic.latitude)
+            );
+            scratchCartographic.longitude = Cesium.Math.toRadians(gcjLng);
+            scratchCartographic.latitude = Cesium.Math.toRadians(gcjLat);
+            scratchCartographic.height = cartographic.height;
+            return gcjProjection.project(scratchCartographic, result);
+        };
+
+        // Web Mercator -> GCJ-02 -> WGS-84（用于瓦片矩形与拾取坐标反算）
+        this._projection.unproject = function(cartesian, result) {
+            const cartographic = gcjProjection.unproject(cartesian, result);
+            const [wgsLng, wgsLat] = CoordTransform.gcj02ToWgs84(
+                Cesium.Math.toDegrees(cartographic.longitude),
+                Cesium.Math.toDegrees(cartographic.latitude)
+            );
+            cartographic.longitude = Cesium.Math.toRadians(wgsLng);
+            cartographic.latitude = Cesium.Math.toRadians(wgsLat);
+            cartographic.height = 0.0;
+            return cartographic;
+        };
+    }
+}
+
+// 高德瓦片地址（style=6 卫星影像，style=7 矢量地图，style=8 透明路网注记）
+const AMAP_TILE_URLS = {
+    satellite: 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',
+    vector: 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}',
+    annotation: 'https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}'
+};
+
+function createAmapImageryProvider(kind) {
+    return new Cesium.UrlTemplateImageryProvider({
+        url: AMAP_TILE_URLS[kind],
+        subdomains: ['1', '2', '3', '4'],
+        tilingScheme: new AmapMercatorTilingScheme(),
+        minimumLevel: 1,
+        maximumLevel: 18
+    });
+}
+
+// 高德卫星影像（默认底图）
+const amapSatelliteViewModel = new Cesium.ProviderViewModel({
+    name: '高德卫星影像',
+    tooltip: '高德卫星影像底图（GCJ-02 已自动纠偏至 WGS-84）',
+    iconUrl: '../images/imagery/amap-satellite.jpg',
+    category: '高德地图',
+    creationFunction: function() {
+        return createAmapImageryProvider('satellite');
+    }
+});
+
+// 高德卫星影像 + 中文路网注记
+const amapHybridViewModel = new Cesium.ProviderViewModel({
+    name: '高德卫星（路网注记）',
+    tooltip: '高德卫星影像叠加中文路网与地名注记（GCJ-02 已自动纠偏至 WGS-84）',
+    iconUrl: '../images/imagery/amap-hybrid.jpg',
+    category: '高德地图',
+    creationFunction: function() {
+        return [
+            createAmapImageryProvider('satellite'),
+            createAmapImageryProvider('annotation')
+        ];
+    }
+});
+
+// 高德矢量地图（普通地图）
+const amapVectorViewModel = new Cesium.ProviderViewModel({
+    name: '高德普通地图',
+    tooltip: '高德矢量中文地图（GCJ-02 已自动纠偏至 WGS-84）',
+    iconUrl: '../images/imagery/amap-vector.jpg',
+    category: '高德地图',
+    creationFunction: function() {
+        return createAmapImageryProvider('vector');
+    }
+});
+
+// 高德选项置于 Imagery 菜单顶部，同时保留必应等原有底图作为备选
+const imageryProviderViewModels = [
+    amapSatelliteViewModel,
+    amapHybridViewModel,
+    amapVectorViewModel
+].concat(Cesium.createDefaultImageryProviderViewModels());
+
 // 设置默认视图为中国范围
 Cesium.Camera.DEFAULT_VIEW_RECTANGLE = Cesium.Rectangle.fromDegrees(80, 22, 130, 50);
 
@@ -10,6 +165,8 @@ Cesium.Ellipsoid.MOON = new Cesium.Ellipsoid( moonRadius, moonRadius, moonRadius
 
 const viewer = new Cesium.Viewer('cesiumContainer', {
     baseLayerPicker: true,  // 启用底图选择器
+    imageryProviderViewModels: imageryProviderViewModels, // 影像菜单（高德优先 + 必应等原有选项）
+    selectedImageryProviderViewModel: amapSatelliteViewModel, // 默认使用高德卫星影像
     animation: true,        // 初始启用动画控件
     timeline: true,         // 初始启用时间线
     fullscreenButton: false,
